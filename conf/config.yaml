@@ -1,0 +1,14 @@
+data_loader:
+  data_dir: data/coco
+  
+  # annotation file should have json format
+  train_instance: annotations/instances_train2017.json
+  val_instance: annotations/instances_val2017.json
+  train_data: train2017
+  val_data: val2017
+  test_data: test2017
+
+  batch_size: 128
+  num_workers: 4
+  train_shuffle: true
+  val_shuffle: false  
