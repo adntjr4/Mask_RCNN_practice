@@ -7,6 +7,10 @@ __pycache__/*
 .vscode/*
 
 # ignore data folder
-data/*
-!data/*/.gitkeep
-!data/*/*/.gitkeep
+data/coco
+data/coco/*
+data/tmp/*
+data/saved/checkpoint/*
+!data/saved/checkpoint/.gitkeep
+data/saved/result/*
+!data/saved/result/.gitkeep

@@ -1,3 +1,9 @@
+model:
+  backbone:
+    backbone_type: R50
+  RPN:
+    train_region_threshold: 0.7
+
 data_loader:
   data_dir: data/coco
   
@@ -8,7 +14,16 @@ data_loader:
   val_data: val2017
   test_data: test2017
 
-  batch_size: 128
-  num_workers: 4
+  resize: 1024
+  batch_size: 2
+  num_workers: 2
   train_shuffle: true
-  val_shuffle: false  
+  val_shuffle: false
+
+train:
+  max_epoch: 128
+  optimizer: Adam
+  lr: 1.0e-4
+
+
+  
