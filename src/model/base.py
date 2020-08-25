@@ -19,7 +19,11 @@ class BaseModel(nn.Module):
         self.backbone_model = BackBone(self.conf_backbone['backbone_type'])
 
     def _build_RPN(self):
-        self.RPN = RPN(self.backbone_model.get_channel(), 256, tr_thres=self.conf_RPN['train_region_threshold'])
+        self.RPN = RPN( self.backbone_model.get_channel(),
+                        256,
+                        self.conf_RPN['input_size'],
+                        pos_thres=self.conf_RPN['positive_threshold'],
+                        neg_thres=self.conf_RPN['negative_threshold'] )
 
     def forward(self, x):
         feature_map = self.backbone_model(x)

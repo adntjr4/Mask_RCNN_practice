@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 class Trainer:
-    def __init__(self, model, data_loader, config, special_mode=None):
+    def __init__(self, model, data_loader, config):
         self.model = model
         self.data_loader = data_loader
         self.config = config
@@ -37,15 +37,14 @@ class Trainer:
                 self.log_out('%s : %.4f'%(loss_key, losses[loss_key]))
 
     def train_1epoch(self):
-        for data_idx, data in enumerate(self.data_loader):
-            # image, size, label, bbox
-            image, size, label, bbox = data[0].to(self.device), data[1]
-
+        for data in self.data_loader:
+            # data to gpu
+            image, size, label, bbox = data
             # forward
             model_out = self.model(image)
 
-            # get losses (Dict)
-            losses = self.criterion(model_out, image, anno)
+            # get losses (return dict)
+            losses = self.criterion(model_out, (size, label, bbox))
 
             # backward
             self.optimizer.zero_grad()
@@ -61,10 +60,13 @@ class Trainer:
     def load_model(self):
         raise NotImplementedError
 
-    def criterion(self, model_out, image, anno):
+    def criterion(self, model_out, gt):
         losses = dict()
 
         # RPN cls
+        pos_label, neg_label, _ = self.model.RPN.get_anchor_label(gt)
+        
+
         losses['cls_loss'] = self.cls_criterion()
 
         # RPN bbox reg

@@ -1,8 +1,14 @@
+share_conf:
+  - &input_size {input_size: [1024, 1024]}
+
 model:
   backbone:
+    <<: *input_size
     backbone_type: R50
   RPN:
-    train_region_threshold: 0.7
+    <<: *input_size
+    positive_threshold: 0.7
+    negative_threshold: 0.3
 
 data_loader:
   data_dir: data/coco
@@ -10,15 +16,14 @@ data_loader:
   # annotation file should have json format
   train_instance: annotations/instances_train2017.json
   val_instance: annotations/instances_val2017.json
+  test_instance: annotations/image_info_test2017.json
   train_data: train2017
   val_data: val2017
   test_data: test2017
 
-  resize: 1024
-  batch_size: 2
-  num_workers: 2
-  train_shuffle: true
-  val_shuffle: false
+  <<: *input_size
+  batch_size: 1
+  num_workers: 4
 
 train:
   max_epoch: 128

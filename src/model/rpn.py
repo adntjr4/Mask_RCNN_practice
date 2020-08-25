@@ -3,17 +3,24 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 
+from src.util.util import IoU
+from src.model.anchor_generate import generate_anchor_form, box_regression
+
 
 class RPN(nn.Module):
-    def __init__(self, in_shape, inter_channel, tr_thres=0.7):
+    def __init__(self, feature_size, inter_channel, image_size, pos_thres=0.7, neg_thres=0.3):
         super().__init__()
 
-        in_channel, self.in_H, self.in_W = in_shape
+        feature_channel, self.feature_H, self.feature_W = feature_size
+
+        self.image_size = image_size
+        self.pos_thres = pos_thres
+        self.neg_thres = neg_thres
 
         self._set_anchor()
         self.num_anchor = len(self.anchor)
 
-        self.inter_conv = nn.Conv2d(in_channel, inter_channel, kernel_size=3, padding=1)
+        self.inter_conv = nn.Conv2d(feature_channel, inter_channel, kernel_size=3, padding=1)
         self.cls_conv = nn.Conv2d(inter_channel, self.num_anchor, kernel_size=1)
         self.reg_conv = nn.Conv2d(inter_channel, 4*self.num_anchor, kernel_size=1)
 
@@ -26,13 +33,11 @@ class RPN(nn.Module):
     def forward(self, features):
         inter_feature = F.relu(self.inter_conv(features))
         cls_score = self.cls_conv(inter_feature)
-        reg_coor = self.reg_conv(inter_feature)
+        regression_variables = self.reg_conv(inter_feature)
 
-        return cls_score, reg_coor
+        return cls_score, regression_variables
 
-    #def get_gt_anchor(self, gt_instance)
-
-    def get_anchor_label(self, gt, threshold:float=0.7):
+    def get_anchor_label(self, gt, regression_variables):
         '''
         B: batch size
         N: number of object
@@ -41,87 +46,59 @@ class RPN(nn.Module):
         H: height of anchor feature map
 
         Args:
-            gt (Tuple) : (img_size, label, bbox)
-                img_size (Tensor) : [B, 2] (HW)
-                label (Tensor) : [B, N]
+            gt (Dict) : {img, label, bbox}
                 bbox (Tensor) : [B, N, 4]
-            threshold (float)
+            regression_variables : Tensor[B, 4*k, H, W]
                
         Returns:
-            anchor_label (Tensor) : [B, k, H, W]
+            anchor_pos_label (Tensor) : [B, k, H, W] label True if anchor is selected as positve sample (highest, > Threshold)
+            anchor_neg_label (Tensor) : [B, k, H, W] label True if anchor is selected as negative sample (< Threshold)
             anchor_bbox (Tensor) : [B, k, H, W, 4] # xywh
         '''
-        img_size, label, bbox = gt
-        batch_size = img_size.size()[0]
-        object_num = label.size()[1]
+        # initialize
+        bbox = gt['bbox']
+        batch_size = bbox.size()[0]
+        object_num = bbox.size()[1]
+        BkHW = batch_size * self.num_anchor * self.feature_H * self.feature_W
+        anchor_pos_label = torch.zeros((BkHW), dtype=torch.bool) # [B * k * H * W]
+        anchor_neg_label = torch.zeros((BkHW), dtype=torch.bool) # [B * k * H * W]
 
-        # tranform anchor to origin image domain
-        BkHW = batch_size * self.num_anchor * self.in_H * self.in_W
-        anchor_label = torch.zeros((BkHW), dtype=torch.bool) # [B * k * H * W]
-        anchor_bbox_list = []
-        for anc in self.anchor:
-            loc_y = torch.arange(self.in_H) # [H]
-            loc_x = torch.arange(self.in_W) # [W]
+        # set anchor        
+        anchor_bbox = generate_anchor_form(self.anchor, (self.feature_H, self.feature_W), self.image_size) # [k, H, W, 4]
+        anchor_bbox = anchor_bbox.repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
 
-            x = torch.stack([loc_x]*self.in_H, dim=0) # [H, W]
-            x = torch.stack([x]*batch_size, dim=0) # [B, H, W]
-            y = torch.stack([loc_y]*self.in_W, dim=1) # [H, W]
-            y = torch.stack([y]*batch_size, dim=0) # [B, H, W]
+        # box regression
+        if regression_variables != None:
+            moved_anchor_bbox = box_regression(anchor_bbox, regression_variables) # [B, k, H, W, 4]
+        else:
+            moved_anchor_bbox = anchor_bbox
 
-            w = torch.ones((batch_size, self.in_H, self.in_W)) * anc[0]
-            h = torch.ones((batch_size, self.in_H, self.in_W)) * anc[0] * anc[1]
-                
-            anchor_bbox_t = torch.stack((x,y,w,h), dim=3) # [B, H, W, 4]
-            anchor_bbox_list.append(anchor_bbox_t)
-        anchor_bbox = torch.stack(anchor_bbox_list) # [k, B, H, W, 4]
-        anchor_bbox = anchor_bbox.permute((1,0,2,3,4)) # [B, k, H, W, 4]
+        # expand bboxes for cross calculate
+        anchor_bbox_cross = moved_anchor_bbox.repeat(object_num,1,1,1,1,1) # [B, k, H, W, 4] -> [N, B, k, H, W, 4]
+        gt_bbox_cross = bbox.repeat(self.num_anchor, self.feature_H, self.feature_W, 1, 1, 1) # [B, N, 4] -> [k, H, W, B, N, 4]
+        gt_bbox_cross = gt_bbox_cross.permute((4,3,0,1,2,5)) # [N, B, k, H, W, 4]
 
         # calculate IoU
-        anchor_bbox_ext = torch.stack([anchor_bbox]*object_num, dim=0) # [N, B, k, H, W, 4]
-        bbox_ext = torch.stack([bbox]*self.in_W, dim=2) # [B, N, W, 4]
-        bbox_ext = torch.stack([bbox_ext]*self.in_H, dim=2) # [B, N, H, W, 4]
-        bbox_ext = torch.stack([bbox_ext]*self.num_anchor, dim=2) # [B, N, k, H, W, 4]
-        bbox_ext = bbox_ext.permute((1,0,2,3,4,5)) # [N, B, k, H, W, 4]
+        cross_IoU = IoU(gt_bbox_cross, anchor_bbox_cross).view((object_num, BkHW)) # [N, B * k * H * W]
 
-        cross_IoU = IoU(bbox_ext, anchor_bbox_ext).view((object_num, BkHW)) # [N, B * k * H * W]
+        # label positive, negative anchor
+        anchor_pos_label += torch.sum((cross_IoU > self.pos_thres), dim=0, dtype=torch.bool) # [B * k * H * W]
+        anchor_neg_label += torch.logical_not(torch.sum((cross_IoU > self.neg_thres), dim=0, dtype=torch.bool)) # [B * k * H * W]
 
-        # label highest anchor
+        # label highest anchor (and higher than negative threshold)
         _, highest_indices = torch.max(cross_IoU, dim=1) # [N]
         one_hot_label = F.one_hot(highest_indices, num_classes=BkHW) # [N, B * k * H * W]
-        anchor_label += torch.sum(one_hot_label, dim=0, dtype=torch.bool) # [B * k * H * W]
+        highest_label = torch.sum(one_hot_label, dim=0, dtype=torch.bool)# [B * k * H * W]
+        anchor_pos_label += torch.logical_and(torch.logical_not(anchor_neg_label), highest_label)
 
-        # label over threshold anchor
-        anchor_label += torch.sum((cross_IoU > threshold), dim=0, dtype=torch.bool) # [B * k * H * W]
-
-        anchor_label = anchor_label.view((batch_size, self.num_anchor, self.in_H, self.in_W)) # [B, k, H, W]
+        anchor_pos_label = anchor_pos_label.view((batch_size, self.num_anchor, self.feature_H, self.feature_W)) # [B, k, H, W]
+        anchor_neg_label = anchor_neg_label.view((batch_size, self.num_anchor, self.feature_H, self.feature_W)) # [B, k, H, W]
         
-        return anchor_label, anchor_bbox
-
-
-def IoU(xywh0:torch.Tensor, xywh1:torch.Tensor):
-    assert xywh0.size() == xywh1.size(), 'for calculate IoU, size of two tensor must be same.'
-
-    x0, y0, w0, h0 = xywh0.split(1, dim = len(xywh0.size())-1)
-    x1, y1, w1, h1 = xywh1.split(1, dim = len(xywh0.size())-1)
-
-    x0_, y0_ = x0+w0, y0+h0
-    x1_, y1_ = x1+w1, y1+h1
-    
-    U_x, U_y, U_x_, U_y_ =  torch.max(x0, x1),   \
-                            torch.max(y0, y1),   \
-                            torch.min(x0_, x1_), \
-                            torch.min(y0_, y1_) 
-
-    inter_area = (U_x_-U_x).clamp(min=0.) * (U_y_-U_y).clamp(min=0.)
-    union_area = w0*h0 + w1*h1 - inter_area
-
-    del x0, y0, w0, h0, x1, y1, w1, h1, x0_, y0_, x1_, y1_, U_x, U_x_, U_y, U_y_
-
-    return inter_area / union_area
+        return anchor_pos_label, anchor_neg_label, moved_anchor_bbox
 
 if __name__ == "__main__":
-    xywh0 = torch.Tensor([2., 0., 1., 1.])
-    xywh1 = torch.Tensor([0., 0., 1., 1.])
+    xywh0 = torch.Tensor([1., 1., 1., 1.])
+    xywh1 = torch.Tensor([0., 0., 3., 3.])
 
     print(xywh0)
     print(xywh1)

@@ -1,5 +1,7 @@
-t = dict()
+from pycocotools.coco import COCO
+import torch
 
-t['a'] = 1
+t = torch.randn((1,2))
+tt = torch.randn((1,2))
 
-print(t)
+print(torch.cat([t, tt], dim=1).size())
