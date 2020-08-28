@@ -11,7 +11,7 @@ from src.trainer.trainer import Trainer
 
 
 def main(config):
-    # gpu number
+    # gpu
     os.environ["CUDA_VISIBLE_DEVICES"] = config['device']
 
     # data loader
@@ -25,26 +25,6 @@ def main(config):
     conf_model = config['model']
     model = BaseModel(conf_model)
 
-    for data in train_data_loader:
-        from src.util.util import draw_boxes
-        import cv2
-
-        #print(data['bbox'].size())
-        #data['bbox'] = data['bbox'][0][:6].unsqueeze(0)
-        #print(data['bbox'].size())
-
-        anchor_pos_label, anchor_neg_label, anchor_bbox = model.RPN.get_anchor_label(data, None)
-        boxed_img = draw_boxes(data['img'][0], anchor_bbox[anchor_pos_label])
-
-        t = anchor_pos_label
-        for i in range(4):
-            t = torch.sum(t, dim=0)
-        print(t)
-
-        #boxed_img = draw_boxes(data['img'][0], data['bbox'][0])
-        cv2.imwrite('data/tmp/tt.jpg', boxed_img)
-        exit()
-    
     # trainer
     trainer = Trainer(model, train_data_loader, config)
 
@@ -61,7 +41,8 @@ if __name__ == '__main__':
     args = args.parse_args()
 
     args.config = 'conf/config.yaml'
-    args.device = '2,3'
+    args.device = '2'
+    #args.resume = True
 
     assert args.config is not None, 'config file path is needed'
 

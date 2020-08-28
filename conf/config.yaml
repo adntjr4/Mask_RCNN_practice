@@ -9,6 +9,8 @@ model:
     <<: *input_size
     positive_threshold: 0.7
     negative_threshold: 0.3
+    reg_weight: [0.1, 0.1, 0.1, 0.1]
+    nms_threshold: 0.7
 
 data_loader:
   data_dir: data/coco
@@ -26,9 +28,15 @@ data_loader:
   num_workers: 4
 
 train:
-  max_epoch: 128
+  RPN_reg_loss_weight: 1.
+  RPN_sample_number: 256
+  max_epoch: 100
   optimizer: Adam
   lr: 1.0e-4
+  checkpoint_dir: data/saved/checkpoint
+
+evaluate:
+  RPN_cls_threshold: 0.7
 
 
   

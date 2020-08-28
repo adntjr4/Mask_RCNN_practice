@@ -28,13 +28,16 @@ class BackBone(nn.Module):
         x = self.model.layer4(x)
         return x
 
-    def get_channel(self):
-        return 2048, 7, 7
+    def get_channel(self, input_size):
+        if self.backbone == 'R50':
+            return 2048, int(input_size[0]/32), int(input_size[1]/32)
+        else:
+            raise NotImplementedError
 
 
 if __name__ == '__main__':
     import torch
     bb = BackBone()
-    x = torch.randn(1, 3, 1024, 1024)
+    x = torch.randn(1, 3, 224, 224)
     y = bb(x)
     print(y.size())

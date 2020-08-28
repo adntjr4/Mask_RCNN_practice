@@ -31,16 +31,26 @@ def generate_anchor_form(anchor, feature_size, image_size):
     anchor_bbox = torch.stack(anchor_bbox_list) # [k, H, W, 4]
     return anchor_bbox
 
-def box_regression(bbox, variables):
+def box_regression(bbox, variables, weight):
     '''
     Args:
         bbox : Tensor[B, k, H, W, 4]
         variables : Tensor[B, 4*k, H, W]
+        weight : Tuple(w_x, w_y, w_w, w_h)
     Returns:
         moved_bbox : Tensor[B, k, H, W, 4]
     '''
-    a_x, a_y, a_w, a_h = bbox.split(1, dim=4)      # [B, k, H, W, 1]
-    t_x, t_y, t_w, t_h = variables.split(1, dim=1) # [B, k, H, W, 1]
+    _, k, _, _, _ = bbox.size()
+
+    a_x, a_y, a_w, a_h = bbox.split(1, dim=4) # [B, k, H, W, 1]
+    t_x, t_y, t_w, t_h = [tmp.unsqueeze(4) for tmp in variables.split(k, dim=1)] # [B, k, H, W, 1]
+
+    w_x, w_y, w_w, w_h = weight
+
+    t_x *= w_x
+    t_y *= w_y
+    t_w *= w_w
+    t_h *= w_h
 
     m_x = a_w * t_x + a_x
     m_y = a_h * t_y + a_y
@@ -50,3 +60,32 @@ def box_regression(bbox, variables):
     moved_bbox = torch.cat([m_x, m_y, m_w, m_h], dim=4)
 
     return moved_bbox
+
+def calculate_regression_parameter(anchor_bbox, gt_bbox, weight):
+    '''
+    Args:
+        anchor_bbox (Tensor) : [P, 4]
+        gt_bbox (Tensor) : [P, 4]
+        weight : Tuple(wx, wy, ww, wh)
+    Returns:
+        regression_parameter (Tensor) : [P, 4]
+    '''
+
+    a_x, a_y, a_w, a_h = anchor_bbox.split(1, dim=1) # [P, 1]
+    g_x, g_y, g_w, g_h = gt_bbox.split(1, dim=1) # [P, 1]
+
+    t_x = (g_x - a_x) / a_w
+    t_y = (g_y - a_y) / a_h
+    t_w = (g_w / a_w).log()
+    t_h = (g_h / a_h).log()
+
+    w_x, w_y, w_w, w_h = weight
+
+    t_x /= w_x
+    t_y /= w_y
+    t_w /= w_w
+    t_h /= w_h
+
+    regression_parameter = torch.cat([t_x, t_y, t_w, t_h], dim=1)
+
+    return regression_parameter

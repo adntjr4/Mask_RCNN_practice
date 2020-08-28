@@ -17,15 +17,24 @@ class BaseModel(nn.Module):
 
     def _build_backbone(self):
         self.backbone_model = BackBone(self.conf_backbone['backbone_type'])
+        self.backbone_model.requires_grad_ = False
 
     def _build_RPN(self):
-        self.RPN = RPN( self.backbone_model.get_channel(),
+        threshold = self.conf_RPN['positive_threshold'], self.conf_RPN['negative_threshold']
+        self.RPN = RPN( self.backbone_model.get_channel(self.conf_RPN['input_size']),
                         256,
                         self.conf_RPN['input_size'],
-                        pos_thres=self.conf_RPN['positive_threshold'],
-                        neg_thres=self.conf_RPN['negative_threshold'] )
+                        threshold=threshold,
+                        reg_weight=self.conf_RPN['reg_weight'],
+                        nms_threshold=self.conf_RPN['nms_threshold'] )
 
-    def forward(self, x):
-        feature_map = self.backbone_model(x)
-        RPN_score = self.RPN(feature_map)
-        return RPN_score
+    def forward(self, img):
+        model_out = dict()
+
+        feature_map = self.backbone_model(img)
+
+        RPN_out = self.RPN(feature_map)
+        model_out.update(RPN_out)
+
+
+        return model_out

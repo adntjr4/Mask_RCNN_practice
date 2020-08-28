@@ -30,12 +30,13 @@ class DataSet(data.Dataset):
         '''
         N : number of object
         Returns:
-            sample_dict {'img': Tensor[H, W], 'img_size': Tensor[2] (H, W), 'label': Tensor[N] (int), 'bbox': Tensor[N, 4] (float)}
+            sample_dict {'img': Tensor[C, H, W], 'img_size': Tensor[2] (H, W), 'label': Tensor[N] (int), 'bbox': Tensor[N, 4] (float)}
                 To see final return batch form, see more 'dectection_collate()'
         '''
         # open image
         img_object = self.coco.loadImgs(self.img_id_list[index])[0]
         img = cv2.imread('%s/%s/%s'%(self.data_dir, self.data_type, img_object['file_name']))
+        img_tensor, resize = img_process(img, self.input_size)
 
         # parse image annotation
         img_size = torch.Tensor([img_object['height'], img_object['width']])
@@ -45,9 +46,9 @@ class DataSet(data.Dataset):
         for ann in anns:
             label.append(ann['category_id'])
             bbox.append(ann['bbox'])
-        bbox = resize_xywh(bbox, (img_object['height'], img_object['width']), tuple(self.config['input_size']))
+        bbox = resize_xywh(bbox, (img_object['height'], img_object['width']), resize)
 
-        item = {'img': img_process(img, self.input_size), 'img_size': img_size, 'label': torch.Tensor(label), 'bbox': torch.Tensor(bbox)}
+        item = {'img': img_tensor, 'img_size': img_size, 'label': torch.Tensor(label), 'bbox': torch.Tensor(bbox).view(-1, 4)}
         
         return item
 
@@ -55,12 +56,13 @@ class DataSet(data.Dataset):
         raise NotImplementedError
 
     def __len__(self):
-        return len(self.img_id_list)
+        return 1
+        #return len(self.img_id_list)
 
 def batch_collate(samples):
     '''
     Returns:
-        sample_dict {'image': Tensor[B, H, W] (float), 'img_size': Tensor[B, 2] (float), 'label': Tensor[B, N]) (int), 'bbox': Tensor[B, N, 4]) (float)}
+        sample_dict {'image': Tensor[B, C, H, W] (float), 'img_size': Tensor[B, 2] (float), 'label': Tensor[B, N]) (int), 'bbox': Tensor[B, N, 4]) (float)}
     '''
     images = [sample['img'] for sample in samples]
     img_sizes =  [sample['img_size'] for sample in samples]
