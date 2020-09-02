@@ -1,8 +1,9 @@
 import os
+from os import path
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
+from torch import nn
+from torch import optim
 
 
 class Trainer:
@@ -24,7 +25,7 @@ class Trainer:
 
         # load checkpoint to resume
         if self.config['resume']:
-            self.load_checkpoint('%s/%s_checkpoint.pth'%(self.config['train']['checkpoint_dir'], self.config.get_model_name()))
+            self.load_checkpoint(path.join(self.config['train']['checkpoint_dir'], '{}_checkpoint.pth'.format(self.config.get_model_name())))
             self.log_out('keep training from last checkpoint...')
         else:
             self._set_optimizer()
@@ -59,9 +60,7 @@ class Trainer:
         running_losses = {'cls_loss':0.0, 'reg_loss':0.0}
         for data in self.data_loader:
             # to device
-            cuda_data = dict()
-            for data_name in data:
-                cuda_data[data_name] = data[data_name].cuda()
+            cuda_data = {k: v.cuda() for k, v in data.items()}
 
             # forward
             model_out = self.model(cuda_data['img'])
@@ -71,8 +70,8 @@ class Trainer:
 
             # backward
             self.optimizer.zero_grad()
-            for loss_name in losses:
-                losses[loss_name].backward(retain_graph=True)
+            total_loss = sum(v for v in losses.values())
+            total_loss.backward()
                 running_losses[loss_name] += losses[loss_name].item()
             self.optimizer.step()
         

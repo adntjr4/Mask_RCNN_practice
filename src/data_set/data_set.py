@@ -1,3 +1,4 @@
+from os import path
 
 from pycocotools.coco import COCO
 import cv2
@@ -36,7 +37,9 @@ class DataSet(data.Dataset):
         # open image
         img_object = self.coco.loadImgs(self.img_id_list[index])[0]
         img = cv2.imread('%s/%s/%s'%(self.data_dir, self.data_type, img_object['file_name']))
-        img_tensor, resize = img_process(img, self.input_size)
+        img = cv2.imread(path.join(self.data_dir, self.data_type, img_object['file_name']))
+        
+        img_tensor, resize_img_size = img_process(img, self.input_size)
 
         # parse image annotation
         img_size = torch.Tensor([img_object['height'], img_object['width']])
@@ -46,7 +49,7 @@ class DataSet(data.Dataset):
         for ann in anns:
             label.append(ann['category_id'])
             bbox.append(ann['bbox'])
-        bbox = resize_xywh(bbox, (img_object['height'], img_object['width']), resize)
+        bbox = resize_xywh(bbox, (img_object['height'], img_object['width']), resize_img_size)
 
         item = {'img': img_tensor, 'img_size': img_size, 'label': torch.Tensor(label), 'bbox': torch.Tensor(bbox).view(-1, 4)}
         

@@ -35,7 +35,6 @@ class RPN(nn.Module):
 
         # make default anchor
         self.register_buffer('default_anchor_bbox', generate_anchor_form(self.anchor, (self.feature_H, self.feature_W), self.image_size)) # [k, H, W, 4]
-        #self.default_anchor_bbox = generate_anchor_form(self.anchor, (self.feature_H, self.feature_W), self.image_size).cuda() # [k, H, W, 4]
 
     def forward(self, features):
         inter_feature = F.relu(self.inter_conv(features))
@@ -70,8 +69,10 @@ class RPN(nn.Module):
         batch_size = bbox.size()[0]
         object_num = bbox.size()[1]
         kHW = self.num_anchor * self.feature_H * self.feature_W
-        anchor_pos_label = torch.zeros((batch_size, kHW), dtype=torch.bool).cuda() # [BkHW]
-        anchor_neg_label = torch.zeros((batch_size, kHW), dtype=torch.bool).cuda() # [BkHW]
+        #anchor_pos_label = torch.zeros((batch_size, kHW), dtype=torch.bool).cuda() # [BkHW]
+        anchor_pos_label = bbox.new_zeros((batch_size, kHW), dtype=torch.bool)
+        #anchor_neg_label = torch.zeros((batch_size, kHW), dtype=torch.bool).cuda() # [BkHW]
+        anchor_neg_label = bbox.new_zeros((batch_size, kHW), dtype=torch.bool)
 
         # anchor_bbox expand as batch size
         anchor_bbox = self.default_anchor_bbox.repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
@@ -92,27 +93,31 @@ class RPN(nn.Module):
             cross_IoU = IoU(anchor_bbox_cross, gt_bbox_cross).view((batch_size, object_num, kHW)) # [B, N, kHW]
             
             # label highest anchor
-            _, highest_indices = torch.max(cross_IoU, dim=2) # [B, N]
+            highest_indices = torch.argmax(cross_IoU, dim=2) # [B, N]
             one_hot_label = F.one_hot(highest_indices, num_classes=kHW) # [B, N, kHW]
-            highest_label = torch.sum(one_hot_label, dim=1, dtype=torch.bool) # [B, kHW]
+            #highest_label = torch.sum(one_hot_label, dim=1, dtype=torch.bool) # [B, kHW]
+            highest_label = one_hot_label.any(1) # [B, kHW]
             anchor_pos_label += torch.logical_and(torch.logical_not(anchor_neg_label), highest_label)
 
             # label positive, negative anchor ()
-            anchor_pos_label += torch.sum((cross_IoU > self.pos_thres), dim=1, dtype=torch.bool) # [B, kHW]
-            anchor_neg_label += torch.logical_not(torch.sum((cross_IoU > self.neg_thres), dim=1, dtype=torch.bool)) # [B, kHW]
+            #anchor_pos_label += torch.sum((cross_IoU > self.pos_thres), dim=1, dtype=torch.bool) # [B, kHW]
+            anchor_pos_label += (cross_IoU > self.pos_thres).any(1) # [B, kHW]
+            #anchor_neg_label += torch.logical_not(torch.sum((cross_IoU > self.neg_thres), dim=1, dtype=torch.bool)) # [B, kHW]
+            anchor_neg_label += torch.logical_not((cross_IoU > self.neg_thres).any(1)) # [B, kHW]
 
             anchor_pos_label = anchor_pos_label.view((batch_size, self.num_anchor, self.feature_H, self.feature_W)) # [B, k, H, W]
             anchor_neg_label = anchor_neg_label.view((batch_size, self.num_anchor, self.feature_H, self.feature_W)) # [B, k, H, W]
 
             # find hightest gt bbox of each anchor
-            highest_gt_per_anchor = torch.max(cross_IoU, dim=1)[1].view(batch_size, self.num_anchor, self.feature_H, self.feature_W) # [B, k, H, W] (int:0~N-1)
+            highest_gt_per_anchor = torch.argmax(cross_IoU, dim=1).view(batch_size, self.num_anchor, self.feature_H, self.feature_W) # [B, k, H, W] (int:0~N-1)
             highest_gt_object = highest_gt_per_anchor[anchor_pos_label] # [P] (int:0~N-1)
             highest_gt_batch  = torch.arange(0, batch_size).cuda().repeat(self.num_anchor, self.feature_H, self.feature_W, 1).permute(3,0,1,2)[anchor_pos_label] # [P] (int:0~B-1)
             highest_gt = torch.stack([highest_gt_batch, highest_gt_object], dim=1)
         else:
             anchor_pos_label = anchor_pos_label.view((batch_size, self.num_anchor, self.feature_H, self.feature_W))
             anchor_neg_label = torch.logical_not(anchor_neg_label).view((batch_size, self.num_anchor, self.feature_H, self.feature_W))
-            highest_gt = torch.zeros((0, 2), dtype=torch.int).cuda()
+            #highest_gt = torch.zeros((0, 2), dtype=torch.int).cuda()
+            highest_gt = gt.new_zeros((0, 2), dtype=torch.int)
 
         # return dictionary
         return_dict = dict()

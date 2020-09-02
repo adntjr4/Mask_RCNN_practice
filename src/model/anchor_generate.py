@@ -20,8 +20,10 @@ def generate_anchor_form(anchor, feature_size, image_size):
     anchor_bbox_list = []
     for anc in anchor:
         # repeat the aranged tensor and expand
-        x = torch.arange(feature_size_w).repeat((feature_size_h, 1))              * x_expand_ratio # [W] -> [H, W]
-        y = torch.arange(feature_size_h).repeat((feature_size_w, 1)).permute(1,0) * y_expand_ratio # [H] -> [H, W]
+        y, x = torch.meshgrid(torch.arange(feature_size_h), torch.arange(feature_size_w))
+
+        x = x * x_expand_ratio # [W] -> [H, W]
+        y = y * y_expand_ratio # [H] -> [H, W]
 
         w = torch.ones((feature_size_h, feature_size_w)) * anc[0]          # [H, W]
         h = torch.ones((feature_size_h, feature_size_w)) * anc[0] * anc[1] # [H, W]
