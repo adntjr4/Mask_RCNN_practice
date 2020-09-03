@@ -6,31 +6,33 @@ def generate_anchor_form(anchor, feature_size, image_size):
     generate anchors before doing box regression
     Args:
         anchor (List)
-        feature_size (Tuple) (HW)
+        feature_size (List of Tuple) (HW)
         input_size (Tuple) (HW)
     Returns:
-        anchor_bbox : Tensor[k, H, W, 4]
+        anchor_bbox : List(Tensor[k, H, W, 4])
     '''
-    feature_size_h, feature_size_w = feature_size
-    image_size_h  , image_size_w   = image_size
+    anchor_bbox = []
+    for idx, f_size in enumerate(feature_size):
+        feature_size_h, feature_size_w = f_size
+        image_size_h  , image_size_w   = image_size
 
-    x_expand_ratio = image_size_w / feature_size_w
-    y_expand_ratio = image_size_h / feature_size_h
+        x_expand_ratio = image_size_w / feature_size_w
+        y_expand_ratio = image_size_h / feature_size_h
 
-    anchor_bbox_list = []
-    for anc in anchor:
-        # repeat the aranged tensor and expand
-        y, x = torch.meshgrid(torch.arange(feature_size_h), torch.arange(feature_size_w))
+        anchor_bbox_list = []
+        for anc in anchor[idx]:
+            # repeat the aranged tensor and expand
+            y, x = torch.meshgrid(torch.arange(feature_size_h), torch.arange(feature_size_w))
 
-        x = x * x_expand_ratio # [W] -> [H, W]
-        y = y * y_expand_ratio # [H] -> [H, W]
+            x = x * x_expand_ratio # [W] -> [H, W]
+            y = y * y_expand_ratio # [H] -> [H, W]
 
-        w = torch.ones((feature_size_h, feature_size_w)) * anc[0]          # [H, W]
-        h = torch.ones((feature_size_h, feature_size_w)) * anc[0] * anc[1] # [H, W]
-            
-        anchor_bbox_t = torch.stack((x,y,w,h), dim=2) # [H, W, 4]
-        anchor_bbox_list.append(anchor_bbox_t)
-    anchor_bbox = torch.stack(anchor_bbox_list) # [k, H, W, 4]
+            w = torch.ones((feature_size_h, feature_size_w)) * anc[0]          # [H, W]
+            h = torch.ones((feature_size_h, feature_size_w)) * anc[0] * anc[1] # [H, W]
+                
+            anchor_bbox_t = torch.stack((x,y,w,h), dim=2) # [H, W, 4]
+            anchor_bbox_list.append(anchor_bbox_t)
+        anchor_bbox.append(torch.stack(anchor_bbox_list)) # [k, H, W, 4]
     return anchor_bbox
 
 def box_regression(bbox, variables, weight):

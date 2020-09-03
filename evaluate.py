@@ -20,6 +20,7 @@ def main(config):
     conf_model = config['model']
     model = BaseModel(conf_model)
     model.load_state_dict(load_model(config['weight']))
+    model.eval()
 
     # input image load
     img = cv2.imread(config['input'])
@@ -43,9 +44,7 @@ if __name__ == '__main__':
     
     args = args.parse_args()
 
-    args.config = 'conf/config.yaml'
-    args.weight = 'data/saved/checkpoint/R50_checkpoint.pth'
-    args.device = '2'
+    args.weight = 'data/saved/checkpoint/R50_fpn_checkpoint.pth'
     args.input = 'data/coco/val2017/000000397133.jpg'
 
     assert args.config is not None, 'config file path is needed'

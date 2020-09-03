@@ -12,4 +12,6 @@ class ConfigParser:
         return self.config[name]
 
     def get_model_name(self):
-        return '%s'%(self.config['model']['backbone']['backbone_type'])
+        backbone_type = self.config['model']['backbone']['backbone_type']
+        FPN_mode = '_fpn' if self.config['model']['FPN_mode'] else ''
+        return backbone_type + FPN_mode

@@ -2,13 +2,16 @@
 import torch
 import torch.nn as nn
 
-from src.model.backbone import BackBone
-from src.model.rpn import RPN
+from src.model.backbone.backbone import BackBone
+from src.model.backbone.fpn import FPN
+from src.model.rpn.rpn import RPN
+from src.model.rpn.rpn_head import RPNHead
 
 class BaseModel(nn.Module):
     def __init__(self, conf_model):
         super().__init__()
 
+        self.FPN_mode = conf_model['FPN_mode']
         self.conf_backbone = conf_model['backbone']
         self.conf_RPN = conf_model['RPN']
 
@@ -16,17 +19,17 @@ class BaseModel(nn.Module):
         self._build_RPN()
 
     def _build_backbone(self):
-        self.backbone_model = BackBone(self.conf_backbone['backbone_type'])
-        self.backbone_model.requires_grad_ = False
+        if self.FPN_mode:
+            self.backbone_model = FPN(self.conf_backbone)
+        else:
+            self.backbone_model = BackBone(self.conf_backbone)
 
     def _build_RPN(self):
-        threshold = self.conf_RPN['positive_threshold'], self.conf_RPN['negative_threshold']
-        self.RPN = RPN( self.backbone_model.get_channel(self.conf_RPN['input_size']),
-                        256,
-                        self.conf_RPN['input_size'],
-                        threshold=threshold,
-                        reg_weight=self.conf_RPN['reg_weight'],
-                        nms_threshold=self.conf_RPN['nms_threshold'] )
+        input_size = self.conf_backbone['input_size']
+        self.RPN = RPN( self.FPN_mode, 
+                        self.backbone_model.get_feature_channel(), 
+                        self.backbone_model.get_feature_size(input_size),
+                        self.conf_RPN)
 
     def forward(self, img):
         model_out = dict()

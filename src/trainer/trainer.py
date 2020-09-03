@@ -35,15 +35,13 @@ class Trainer:
             # before training 1 epoch
 
             # train 1 epoch
-            losses = self.train_1epoch()
+            self.train_1epoch()
 
             # after training  epoch
             #if self.epoch % 10 == 0:
             #    self.save_checkpoint()
             
             self.log_out('[epoch %d]'%(self.epoch+1))
-            for loss_name in losses:
-                self.log_out('%s : %.4f'%(loss_name, losses[loss_name]))
 
         print("testing")
         self.save_checkpoint()
@@ -57,7 +55,6 @@ class Trainer:
             cv2.imwrite('data/tmp/RPN_test.jpg', boxed_img)
 
     def train_1epoch(self):
-        running_losses = {'cls_loss':0.0, 'reg_loss':0.0}
         for data in self.data_loader:
             # to device
             cuda_data = {k: v.cuda() for k, v in data.items()}
@@ -72,13 +69,11 @@ class Trainer:
             self.optimizer.zero_grad()
             total_loss = sum(v for v in losses.values())
             total_loss.backward()
-                running_losses[loss_name] += losses[loss_name].item()
             self.optimizer.step()
-        
-        for loss_name in running_losses:
-            running_losses[loss_name] /= self.data_loader.__len__()
 
-        return running_losses
+            # print loss
+            for loss_name in losses:
+                self.log_out('%s : %.4f'%(loss_name, losses[loss_name]))
 
     def save_checkpoint(self):
         checkpoint_dir = self.config['train']['checkpoint_dir']
@@ -97,21 +92,21 @@ class Trainer:
     def criterion(self, model_out, gt):
         losses = dict()
 
-        cls_out = model_out['cls_out'] # [B, 2*k, H, W]
-        reg_out = model_out['reg_out'] # [B, 4*k, H, W]
+        cls_out = model_out['cls_out'] # List([B, 2*k, H, W])
+        reg_out = model_out['reg_out'] # List([B, 4*k, H, W])
         sample_number = self.config['train']['RPN_sample_number']
 
         reg_loss_weight = self.config['train']['RPN_reg_loss_weight']
 
-        # RPN
-        anchor_label = self.model.RPN.get_anchor_label(gt, reg_out)
+        # [RPN] anchor labeling
+        anchor_label = [self.model.RPN.get_anchor_label(gt, one_reg_out, idx) for idx, one_reg_out in enumerate(reg_out)]
 
-        # RPN class
+        # [RPN] class loss
         selected_cls_out, label = self.model.RPN.RPN_label_select(cls_out, anchor_label, sample_number)
         losses['cls_loss'] = self.cls_criterion(selected_cls_out, label)
 
-        # RPN bbox regression
-        if anchor_label['highest_gt'].size()[0] != 0:
+        # [RPN] bbox regression loss
+        if anchor_label[0]['highest_gt'].size()[0] != 0: # N != 0 
             predicted_t, calculated_t = self.model.RPN.RPN_cal_t_regression(reg_out, gt, anchor_label)
             losses['reg_loss'] = self.reg_criterion(predicted_t, calculated_t) * reg_loss_weight
 

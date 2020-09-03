@@ -28,6 +28,10 @@
 
 ## 추가된 내용
 
+- FPN
+    - 기존 backbone은 두고 fpn.py를 만듬
+    - 기존 backbone에만 호환되던 rpn도 수정함.
+- RoIPooling, RoIAlign
 - multiGPU setting
 - rpn에서 연산 수정
     ```
@@ -46,3 +50,11 @@
     new_zeros((h,w))
     ```
 - rpn에서 처음에 생성하는 tensor 바꾸기
+    - nn.meshgrid
+
+## TODO
+
+- config file 구조 수정하기
+
+
+

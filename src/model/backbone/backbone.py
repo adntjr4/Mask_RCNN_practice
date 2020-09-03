@@ -1,20 +1,18 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.models as models
 
 class BackBone(nn.Module):
-    def __init__(self, backbone:str='R50'):
+    def __init__(self, conf_backbone):
         super().__init__()
         
-        assert backbone in ['R50', 'R101']
-        self.backbone = backbone
-        
-        self._build_model()
+        self.backbone = conf_backbone['backbone_type']
+        assert self.backbone in ['R50', 'R101']
 
-    def _build_model(self):
-        if self.backbone == 'R50': # 2048x7x7
+        if self.backbone == 'R50':
             self.model = models.resnet50(pretrained=True)
-        elif self.backbone == 'R101': # 2048x7x7
+        elif self.backbone == 'R101':
             self.model = models.resnet101(pretrained=True)
 
     def forward(self, x):
@@ -26,18 +24,19 @@ class BackBone(nn.Module):
         x = self.model.layer2(x)
         x = self.model.layer3(x)
         x = self.model.layer4(x)
-        return x
+        return [x]
 
-    def get_channel(self, input_size):
-        if self.backbone == 'R50':
-            return 2048, int(input_size[0]/32), int(input_size[1]/32)
-        else:
-            raise NotImplementedError
+    def get_feature_channel(self):
+        return 2048
+
+    def get_feature_size(self, input_size):
+        return [(int(input_size[0]/32), int(input_size[1]/32))]
 
 
 if __name__ == '__main__':
     import torch
-    bb = BackBone()
-    x = torch.randn(1, 3, 224, 224)
+    bb = BackBone({'backbone_type':'R50'})
+    x = torch.randn(1, 3, 1024, 1024)
     y = bb(x)
-    print(y.size())
+    for i in y:
+        print(i.size())

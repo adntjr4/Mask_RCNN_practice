@@ -7,31 +7,36 @@ from src.util.util import IoU, nms
 from src.model.anchor_generate import generate_anchor_form, box_regression, calculate_regression_parameter
 
 
-class RPN(nn.Module):
-    def __init__(self, feature_size, inter_channel, image_size, threshold, reg_weight, nms_threshold):
+class RPNHead():
+    def __init__(self, FPN_mode, conf_RPN):
         super().__init__()
 
-        feature_channel, self.feature_H, self.feature_W = feature_size
+        self.FPN_mode = FPN_mode
 
-        self.image_size = image_size
-        self.pos_thres, self.neg_thres = threshold
-        self.reg_weight = reg_weight
-        self.nms_thres = nms_threshold
+        self.anchor_size = conf_RPN['anchor_size']
+        self.anchor_ratio = conf_RPN['anchor_ratio']
 
-        self._set_anchor()
-        self.num_anchor = len(self.anchor)
+    def get_anchor_type(self):
+        anchor = []
+        if self.FPN_mode:
+            for size in self.anchor_size:
+                anchor.append([[size, ratio] for ratio in self.anchor_ratio])
+        else:
+            for size in self.anchor_size:
+                for ratio in self.anchor_ratio:
+                    anchor.append([size, ratio])
+            anchor = [anchor]
+        return anchor
 
-        # build layers
-        self.inter_conv = nn.Conv2d(feature_channel, inter_channel, kernel_size=3, padding=1)
-        self.cls_conv = nn.Conv2d(inter_channel, 1*self.num_anchor, kernel_size=1)
-        self.reg_conv = nn.Conv2d(inter_channel, 4*self.num_anchor, kernel_size=1)
+    def get_anchor_number(self):
+        if self.FPN_mode:
+            return len(self.anchor_ratio)
+        else:
+            return len(self.anchor_size) * len(self.anchor_ratio)
 
     def _set_anchor(self):
         # anchor type definition
-        self.anchor = []
-        for size in [128, 256, 512]:
-            for ratio in [0.5, 1., 2.]:
-                self.anchor.append([size, ratio])
+        
 
         # make default anchor
         self.register_buffer('default_anchor_bbox', generate_anchor_form(self.anchor, (self.feature_H, self.feature_W), self.image_size)) # [k, H, W, 4]
