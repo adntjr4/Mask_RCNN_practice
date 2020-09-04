@@ -1,6 +1,6 @@
 # week 3
 
-## 수정 내용
+## 저번 주 리뷰 수정
 
 - loss 합으로 바꾸기, iteration마다 loss 출력  
     ```
@@ -26,14 +26,19 @@
     ```
 - etc (변수명 수정)
 
+---
+
 ## 추가된 내용
 
 - FPN
-    - 기존 backbone은 두고 fpn.py를 만듬
+    - 기존 backbone은 두고 fpn.py를 만듬.
     - 기존 backbone에만 호환되던 rpn도 수정함.
-- RoIPooling, RoIAlign
-- multiGPU setting
-- rpn에서 연산 수정
+    - 하지만 아직 작동이 안 됨...
+
+        - rpn의 conv layer는 feature 마다? 공유?
+        - box regression loss가 일정 수치에서 멈추고 학습이 안 되는 경우가 있음
+
+- rpn에서 일부 연산 수정
     ```
     _, b = torch.max(var, dim=1)
                 ▼
@@ -49,12 +54,37 @@
                 ▼
     new_zeros((h,w))
     ```
-- rpn에서 처음에 생성하는 tensor 바꾸기
-    - nn.meshgrid
+
+- [질문] config file 구조
+    - 현재 한 file에 data_set, training, evaluation, model configuration 정보가 함께 있음.
+    - 다 나누는 구조? 다른 파일을 불러오는 구조?
+
+- [질문] 시간 측정
+    - 다른 코드를 보니 time.time() 말고 다른 것을 쓰던데...
+    - 다른 시간 측정 라이브러리?
+
+---
 
 ## TODO
 
-- config file 구조 수정하기
+- 다음 주까지 목표
+    - config file 구조 수정하기
+    - fpn을 위한 rpn 함수 구조 체계화
+    - fpn 작동
+    - multiGPU setting
+    - RoIPooling 추가
+    - classification network (box head)
+    - 시간 측정
+
+- 차후
+    - fpn에서 region proposal의 heuristic method 적용
+    - RoIAlign 추가
+    - box head의 box regression loss와 class loss
+    - box head에서의 heuristic method를 적용
+    - mask head 추가
+    - mask loss 추가
+    - training
+
 
 
 

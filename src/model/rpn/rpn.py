@@ -52,93 +52,117 @@ class RPN(nn.Module):
     def forward(self, features):
         cls_score = []
         regression_variables = []
-        for feature in features:
+        for idx, feature in enumerate(features):
             inter_feature = F.relu(self.inter_conv(feature))
             cls_score.append(torch.sigmoid(self.cls_conv(inter_feature))) # [B, 1*k, H, W]
             regression_variables.append(self.reg_conv(inter_feature))     # [B, 4*k, H, W]
 
         return {'cls_out': cls_score, 'reg_out': regression_variables}
 
-    def get_anchor_label(self, gt, regression_variables, feature_index):
+    def get_anchor_label(self, gt, regression_variables):
         '''
         Args:
             gt (Dict) : {img, label, bbox}
                 bbox (Tensor) : [B, N, 4]
-            regression_variables (Tensor) : [B, 4*k, H, W]
-            feature_index :
+            regression_variables (Tensor) : List([B, 4*k, H, W])
                
         Returns:
             anchor_label (Dict) : {anchor_bbox, anchor_pos_label, anchor_neg_label, highest_gt}
-                anchor_bbox (Tensor) : [B, k, H, W, 4] # xywh
-                anchor_pos_label (Tensor) : [B, k, H, W] label True if anchor is selected as positve sample (highest, > Threshold)
-                anchor_neg_label (Tensor) : [B, k, H, W] label True if anchor is selected as negative sample (< Threshold)
-                highest_gt (Tensor) : [P, 2] (batch, object number)  
+                anchor_bbox (List) : Tensor[B, k, H, W, 4] # xywh
+                anchor_pos_label (List) : Tensor[B, k, H, W] label True if anchor is selected as positve sample (highest, > Threshold)
+                anchor_neg_label (List) : Tensor[B, k, H, W] label True if anchor is selected as negative sample (< Threshold)
+                highest_gt (List) : Tensor[P, 2] (batch, object number)  
         '''
         # initialize
         bbox = gt['bbox']
         batch_size = bbox.size()[0]
         object_num = bbox.size()[1]
-        feature_H = regression_variables.size()[2]
-        feature_W = regression_variables.size()[3]
-        f_idx = feature_index
 
-        kHW = self.num_anchor * feature_H * feature_W
-        #anchor_pos_label = torch.zeros((batch_size, kHW), dtype=torch.bool).cuda() # [BkHW]
-        anchor_pos_label = bbox.new_zeros((batch_size, kHW), dtype=torch.bool)
-        #anchor_neg_label = torch.zeros((batch_size, kHW), dtype=torch.bool).cuda() # [BkHW]
-        anchor_neg_label = bbox.new_zeros((batch_size, kHW), dtype=torch.bool)
+        moved_anchor_bbox_list = []
+        anchor_pos_label_list = []
+        anchor_neg_label_list = []
+        highest_gt_list = []
 
-        # anchor_bbox expand as batch size
-        #anchor_bbox = self.default_anchor_bbox.repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
-        anchor_bbox = getattr(self, 'default_anchor_bbox%d'%f_idx).repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
+        kHW_list = []
+        cross_IoU_list = []
 
-        # box regression
-        if regression_variables != None:
-            moved_anchor_bbox = box_regression(anchor_bbox, regression_variables, self.reg_weight) # [B, k, H, W, 4]
-        else:
-            moved_anchor_bbox = anchor_bbox
+        for f_idx, one_regression_variables in enumerate(regression_variables):
+            feature_H = one_regression_variables.size()[2]
+            feature_W = one_regression_variables.size()[3]
 
-        if object_num != 0:
-            # expand bboxes for cross calculate
-            anchor_bbox_cross = moved_anchor_bbox.repeat(object_num,1,1,1,1,1).permute(1,0,2,3,4,5) # [B, k, H, W, 4] -> [B, N, k, H, W, 4]
-            gt_bbox_cross = bbox.repeat(self.num_anchor, feature_H, feature_W, 1, 1, 1) # [B, N, 4] -> [k, H, W, B, N, 4]
-            gt_bbox_cross = gt_bbox_cross.permute((3,4,0,1,2,5)) # [B, N, k, H, W, 4]
+            kHW = self.num_anchor * feature_H * feature_W
+            kHW_list.append([self.num_anchor, feature_H, feature_W])
+            anchor_pos_label = bbox.new_zeros((batch_size, kHW), dtype=torch.bool)
+            anchor_neg_label = bbox.new_zeros((batch_size, kHW), dtype=torch.bool)
 
-            # calculate IoU
-            cross_IoU = IoU(anchor_bbox_cross, gt_bbox_cross).view((batch_size, object_num, kHW)) # [B, N, kHW]
-            
-            # label highest anchor
-            highest_indices = torch.argmax(cross_IoU, dim=2) # [B, N]
-            one_hot_label = F.one_hot(highest_indices, num_classes=kHW) # [B, N, kHW]
-            highest_label = torch.sum(one_hot_label, dim=1, dtype=torch.bool) # [B, kHW]
-            anchor_pos_label += torch.logical_and(torch.logical_not(anchor_neg_label), highest_label)
+            # anchor_bbox expand as batch size
+            anchor_bbox = getattr(self, 'default_anchor_bbox%d'%f_idx).repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
 
-            # label positive, negative anchor ()
-            #anchor_pos_label += torch.sum((cross_IoU > self.pos_thres), dim=1, dtype=torch.bool) # [B, kHW]
-            anchor_pos_label += (cross_IoU > self.pos_thres).any(1) # [B, kHW]
-            #anchor_neg_label += torch.logical_not(torch.sum((cross_IoU > self.neg_thres), dim=1, dtype=torch.bool)) # [B, kHW]
-            anchor_neg_label += torch.logical_not((cross_IoU > self.neg_thres).any(1)) # [B, kHW]
+            # box regression
+            if one_regression_variables != None:
+                moved_anchor_bbox = box_regression(anchor_bbox, one_regression_variables, self.reg_weight) # [B, k, H, W, 4]
+            else:
+                moved_anchor_bbox = anchor_bbox
 
-            anchor_pos_label = anchor_pos_label.view((batch_size, self.num_anchor, feature_H, feature_W)) # [B, k, H, W]
-            anchor_neg_label = anchor_neg_label.view((batch_size, self.num_anchor, feature_H, feature_W)) # [B, k, H, W]
+            if object_num != 0:
+                # expand bboxes for cross calculate
+                anchor_bbox_cross = moved_anchor_bbox.repeat(object_num,1,1,1,1,1).permute(1,0,2,3,4,5) # [B, k, H, W, 4] -> [B, N, k, H, W, 4]
+                gt_bbox_cross = bbox.repeat(self.num_anchor, feature_H, feature_W, 1, 1, 1) # [B, N, 4] -> [k, H, W, B, N, 4]
+                gt_bbox_cross = gt_bbox_cross.permute((3,4,0,1,2,5)) # [B, N, k, H, W, 4]
+
+                # calculate IoU
+                cross_IoU = IoU(anchor_bbox_cross, gt_bbox_cross).view((batch_size, object_num, kHW)) # [B, N, kHW]
+                cross_IoU_list.append(cross_IoU)
+
+                # label positive, negative anchor ()
+                anchor_pos_label += (cross_IoU > self.pos_thres).any(1) # [B, kHW]
+                anchor_neg_label += torch.logical_not((cross_IoU > self.neg_thres).any(1)) # [B, kHW]
+
+                anchor_pos_label = anchor_pos_label.view((batch_size, self.num_anchor, feature_H, feature_W)) # [B, k, H, W]
+                anchor_neg_label = anchor_neg_label.view((batch_size, self.num_anchor, feature_H, feature_W)) # [B, k, H, W]
+
+            else:
+                anchor_pos_label = anchor_pos_label.view((batch_size, self.num_anchor, feature_H, feature_W))
+                anchor_neg_label = torch.logical_not(anchor_neg_label).view((batch_size, self.num_anchor, feature_H, feature_W))
+                highest_gt = gt.new_zeros((0, 2), dtype=torch.int)
+
+            moved_anchor_bbox_list.append(moved_anchor_bbox)
+            anchor_pos_label_list.append(anchor_pos_label)
+            anchor_neg_label_list.append(anchor_neg_label)
+
+        # closest anchor
+        total_cross_IoU = torch.cat(cross_IoU_list, 2) # [B, N, sum(kHW)]
+        total_closest_indices = torch.argmax(total_cross_IoU, dim=2) # [B, N]
+        sum_of_kHW = sum([k*h*w for k, h, w in kHW_list])
+        total_one_hot_label = F.one_hot(total_closest_indices, num_classes=sum_of_kHW) # [B, N, sum(kHW)]
+        
+        for idx, kHW in enumerate(kHW_list):
+            k, H, W = kHW
+            stt, end = sum([k*h*w for k, h, w in kHW_list[:idx]]), sum([k*h*w for k, h, w in kHW_list[:idx+1]])
+
+            # label closest anchor
+            one_hot_label = total_one_hot_label[:,:,stt:end]
+            closest_label = torch.sum(one_hot_label, dim=1, dtype=torch.bool) # [B, kHW]
+            closest_label = closest_label.view(batch_size, k, H, W)
+            anchor_pos_label_list[idx] += closest_label
+
+            # remove closest negative anchor
+            anchor_neg_label_list[idx] = torch.logical_and(torch.logical_not(closest_label), anchor_neg_label_list[idx])
 
             # find hightest gt bbox of each anchor
-            highest_gt_per_anchor = torch.argmax(cross_IoU, dim=1).view(batch_size, self.num_anchor, feature_H, feature_W) # [B, k, H, W] (int:0~N-1)
-            highest_gt_object = highest_gt_per_anchor[anchor_pos_label] # [P] (int:0~N-1)
-            highest_gt_batch  = torch.arange(0, batch_size).cuda().repeat(self.num_anchor, feature_H, feature_W, 1).permute(3,0,1,2)[anchor_pos_label] # [P] (int:0~B-1)
+            highest_gt_per_anchor = torch.argmax(total_cross_IoU[:,:,stt:end], dim=1).view(batch_size, k, H, W) # [B, k, H, W] (int:0~N-1)
+            highest_gt_object = highest_gt_per_anchor[anchor_pos_label_list[idx]] # [P] (int:0~N-1)
+            highest_gt_batch  = torch.arange(0, batch_size).cuda().repeat(k, H, W, 1).permute(3,0,1,2)[anchor_pos_label_list[idx]] # [P] (int:0~B-1)
             highest_gt = torch.stack([highest_gt_batch, highest_gt_object], dim=1)
-        else:
-            anchor_pos_label = anchor_pos_label.view((batch_size, self.num_anchor, feature_H, feature_W))
-            anchor_neg_label = torch.logical_not(anchor_neg_label).view((batch_size, self.num_anchor, feature_H, feature_W))
-            #highest_gt = torch.zeros((0, 2), dtype=torch.int).cuda()
-            highest_gt = gt.new_zeros((0, 2), dtype=torch.int)
+            highest_gt_list.append(highest_gt)
+        
 
         # return dictionary
         return_dict = dict()
-        return_dict['anchor_bbox'] = moved_anchor_bbox
-        return_dict['anchor_pos_label'] = anchor_pos_label
-        return_dict['anchor_neg_label'] = anchor_neg_label
-        return_dict['highest_gt'] = highest_gt
+        return_dict['anchor_bbox'] = moved_anchor_bbox_list
+        return_dict['anchor_pos_label'] = anchor_pos_label_list
+        return_dict['anchor_neg_label'] = anchor_neg_label_list
+        return_dict['highest_gt'] = highest_gt_list
 
         return return_dict
 
@@ -180,43 +204,44 @@ class RPN(nn.Module):
         N : number of negative anchor
         Args:
             cls_out : List(Tensor[B, k, H, W])
-            anchor_label : List(dict({anchor_pos_label, anchor_neg_label}))
-                anchor_pos_label : Tensor[B, k, H, W] (bool)
-                anchor_neg_label : Tensor[B, k, H, W] (bool)
+            anchor_label : dict({anchor_pos_label, anchor_neg_label})
+                anchor_pos_label : List(Tensor[B, k, H, W]) (bool)
+                anchor_neg_label : List(Tensor[B, k, H, W]) (bool)
         Return:
             sampled_cls_out : Tensor[sample_number]
             label : Tensor[P+N] (front:ones, back:zeros)
         '''
-        sampled_cls_out = []
-        label = []
+        pos_cls_out_list = []
+        neg_cls_out_list = []
 
         for idx, one_cls_out in enumerate(cls_out):
-            pos_label, neg_label = anchor_label[idx]['anchor_pos_label'], anchor_label[idx]['anchor_neg_label']
+            pos_label, neg_label = anchor_label['anchor_pos_label'][idx], anchor_label['anchor_neg_label'][idx]
 
-            B, k, H, W = one_cls_out.size()
+            # gathering whole positive and negative class out
+            pos_cls_out_list.append(one_cls_out[pos_label])
+            neg_cls_out_list.append(one_cls_out[neg_label])
 
-            # get whole positive and negative class out
-            pos_cls_out, neg_cls_out = one_cls_out[pos_label],           one_cls_out[neg_label]
-            pos_num,     neg_num     = one_cls_out[pos_label].size()[0], one_cls_out[neg_label].size()[0]
+        pos_cls_out, neg_cls_out = torch.cat(pos_cls_out_list), torch.cat(neg_cls_out_list)
+        pos_num,     neg_num     = pos_cls_out.size()[0], neg_cls_out.size()[0]
 
-            # random sampling
-            pivot = int(sample_number/2)
-            if pos_num <= pivot:
-                sampled_pos_cls_out = pos_cls_out
-                sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sample_number-pos_num]]
-                sampled_pos_num = pos_num
-                sampled_neg_num = sample_number-pos_num
-            else:
-                sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:pivot]]
-                sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sample_number-pivot]]
-                sampled_pos_num = pivot
-                sampled_neg_num = sample_number-pivot
+        # random sampling
+        pivot = int(sample_number/2)
+        if pos_num <= pivot:
+            sampled_pos_cls_out = pos_cls_out
+            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sample_number-pos_num]]
+            sampled_pos_num = pos_num
+            sampled_neg_num = sample_number-pos_num
+        else:
+            sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:pivot]]
+            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sample_number-pivot]]
+            sampled_pos_num = pivot
+            sampled_neg_num = sample_number-pivot
 
-            sampled_cls_out.append(torch.cat([sampled_pos_cls_out, sampled_neg_cls_out]))
+        sampled_cls_out = torch.cat([sampled_pos_cls_out, sampled_neg_cls_out])
 
-            label.append(torch.cat([pos_cls_out.new_ones((sampled_pos_num)), pos_cls_out.new_zeros((sampled_neg_num))]))
+        label = torch.cat([pos_cls_out.new_ones((sampled_pos_num)), pos_cls_out.new_zeros((sampled_neg_num))])
 
-        return torch.cat(sampled_cls_out), torch.cat(label)
+        return sampled_cls_out, label
 
     def RPN_cal_t_regression(self, reg_out, gt, anchor_label):
         '''
@@ -236,7 +261,7 @@ class RPN(nn.Module):
         predicted_t = []
         calculated_t = []
         for idx, one_reg_out in enumerate(reg_out):
-            anchor_bbox, pos_label, highest_gt = anchor_label[idx]['anchor_bbox'], anchor_label[idx]['anchor_pos_label'], anchor_label[idx]['highest_gt']
+            anchor_bbox, pos_label, highest_gt = anchor_label['anchor_bbox'][idx], anchor_label['anchor_pos_label'][idx], anchor_label['highest_gt'][idx]
 
             B, k4, H, W = one_reg_out.size()
             k = int(k4/4)
@@ -251,6 +276,13 @@ class RPN(nn.Module):
             calculated_t.append(calculate_regression_parameter(pos_anchor_bbox, pos_gt_bbox, self.reg_weight))
 
         return torch.cat(predicted_t), torch.cat(calculated_t)
+
+    def _get_true_anchors(self, gt, reg_out):
+        true_bbox_list = []
+        anchor_label = self.get_anchor_label(gt, reg_out)
+        for idx, bbox in enumerate(anchor_label['anchor_bbox']):
+            true_bbox_list.append(bbox[anchor_label['anchor_pos_label'][idx]])
+        return torch.cat(true_bbox_list)
 
 
 if __name__ == "__main__":

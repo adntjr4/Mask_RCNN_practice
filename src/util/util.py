@@ -20,7 +20,7 @@ def draw_boxes(img, boxes, color=(0,255,0)):
         x, y, w, h = box
         pt1 = (int(x), int(y))
         pt2 = (int(x+w), int(y+h))
-        img = cv2.rectangle(cv2.UMat(img), pt1, pt2, color, 2)
+        img = cv2.rectangle(cv2.UMat(img), pt1, pt2, color, 1)
 
     return img
 

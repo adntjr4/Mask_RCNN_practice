@@ -55,7 +55,7 @@ class Trainer:
             cv2.imwrite('data/tmp/RPN_test.jpg', boxed_img)
 
             model_out = self.model(data['img'].cuda())
-            true_bbox = self.model.RPN._get_true_anchors({k: v.cuda() for k, v in data.items()}, model_out['reg_out'])
+            true_bbox = self.model.RPN._get_true_anchors(gt)
             boxed_img = draw_boxes(data['img'][0], true_bbox)
             cv2.imwrite('data/tmp/RPN_true_labeling.jpg', boxed_img)
 
