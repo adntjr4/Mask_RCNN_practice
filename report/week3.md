@@ -37,6 +37,7 @@
 
         - rpn의 conv layer는 feature 마다? 공유?
         - box regression loss가 일정 수치에서 멈추고 학습이 안 되는 경우가 있음
+        - box regression을 disable 시키고 debug
 
 - rpn에서 일부 연산 수정
     ```
@@ -62,28 +63,29 @@
 - [질문] 시간 측정
     - 다른 코드를 보니 time.time() 말고 다른 것을 쓰던데...
     - 다른 시간 측정 라이브러리?
+    - 그냥 time 쓰면 됨.
 
 ---
 
 ## TODO
 
 - 다음 주까지 목표
-    - config file 구조 수정하기
-    - fpn을 위한 rpn 함수 구조 체계화
-    - fpn 작동
-    - multiGPU setting
-    - RoIPooling 추가
-    - classification network (box head)
-    - 시간 측정
+    - [] 시간 측정
+    - [] config file 구조 수정하기
+    - [] fpn debug w/o box regression
+    - [] fpn을 위한 rpn 함수 구조 체계화
+    - [] fpn 작동
+    - [] multiGPU setting
+    - [] RoIPooling 추가
+    - [] classification network (box head)
+
 
 - 차후
-    - fpn에서 region proposal의 heuristic method 적용
-    - RoIAlign 추가
-    - box head의 box regression loss와 class loss
-    - box head에서의 heuristic method를 적용
-    - mask head 추가
-    - mask loss 추가
-    - training
+    - [] fpn에서 region proposal의 heuristic method 적용
+    - [] RoIAlign 추가
+    - [] box head의 box regression loss와 class loss
+    - [] box head에서의 heuristic method를 적용
+    - [] training
 
 
 
