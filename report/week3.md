@@ -70,22 +70,22 @@
 ## TODO
 
 - 다음 주까지 목표
-    - [] 시간 측정
-    - [] config file 구조 수정하기
-    - [] fpn debug w/o box regression
-    - [] fpn을 위한 rpn 함수 구조 체계화
-    - [] fpn 작동
-    - [] multiGPU setting
-    - [] RoIPooling 추가
-    - [] classification network (box head)
+    - [ ] 시간 측정
+    - [ ] config file 구조 수정하기
+    - [ ] fpn debug w/o box regression
+    - [ ] fpn을 위한 rpn 함수 구조 체계화
+    - [ ] fpn 작동
+    - [ ] multiGPU setting
+    - [ ] RoIPooling 추가
+    - [ ] classification network (box head)
 
 
 - 차후
-    - [] fpn에서 region proposal의 heuristic method 적용
-    - [] RoIAlign 추가
-    - [] box head의 box regression loss와 class loss
-    - [] box head에서의 heuristic method를 적용
-    - [] training
+    - [ ] fpn에서 region proposal의 heuristic method 적용
+    - [ ] RoIAlign 추가
+    - [ ] box head의 box regression loss와 class loss
+    - [ ] box head에서의 heuristic method를 적용
+    - [ ] training 
 
 
 
