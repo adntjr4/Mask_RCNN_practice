@@ -70,10 +70,14 @@
 ## TODO
 
 - 다음 주까지 목표
-    - [ ] 시간 측정
-    - [ ] config file 구조 수정하기
+    - [x] config file 구조 수정하기
+    - [x] trainer에 기능 on/off 넣기
+    - [ ] rpn process 재정립
+    - [ ] basemodel 테스트
     - [ ] fpn debug w/o box regression
     - [ ] fpn을 위한 rpn 함수 구조 체계화
+    - [ ] 시간 측정
+    - [ ] rpn for human dectection
     - [ ] fpn 작동
     - [ ] multiGPU setting
     - [ ] RoIPooling 추가

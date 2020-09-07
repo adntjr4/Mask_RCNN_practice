@@ -7,8 +7,13 @@ from torch import optim
 
 
 class Trainer:
-    def __init__(self, model, data_loader, config):
+    def __init__(self, model, data_loader, config, onoff=None):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
+
+        if onoff is None:
+            self.onoff = {'rpn_cls':True, 'rpn_box':True}
+        else:
+            self.onoff = onfff
 
         self.model = model
         self.model.cuda()
@@ -43,9 +48,10 @@ class Trainer:
             
             self.log_out('[epoch %d]'%(self.epoch+1))
 
-        print("testing")
+        self.log_out('testing')
         self.save_checkpoint()
-        # image out
+
+        # image out (for debugging)
         for data in self.data_loader:
             model_out = self.model(data['img'].cuda())
             RoI_bbox = self.model.RPN.get_proposed_RoI(model_out['cls_out'], model_out['reg_out'], self.config['evaluate']['RPN_cls_threshold'])
@@ -107,20 +113,21 @@ class Trainer:
         anchor_label = self.model.RPN.get_anchor_label(gt, reg_out)
 
         # [RPN] class loss
-        selected_cls_out, label = self.model.RPN.RPN_label_select(cls_out, anchor_label, sample_number)
-        losses['cls_loss'] = self.cls_criterion(selected_cls_out, label)
+        if self.onoff['rpn_cls']:
+            selected_cls_out, label = self.model.RPN.RPN_label_select(cls_out, anchor_label, sample_number)
+            losses['rpn_cls_loss'] = self.rpn_cls_criterion(selected_cls_out, label)
 
         # [RPN] bbox regression loss
-        if anchor_label['highest_gt'][0].size()[0] != 0: # N != 0 
+        if self.onoff['rpn_box'] and anchor_label['highest_gt'][0].size()[0] != 0: # N != 0 
             predicted_t, calculated_t = self.model.RPN.RPN_cal_t_regression(reg_out, gt, anchor_label)
-            losses['reg_loss'] = self.reg_criterion(predicted_t, calculated_t) * reg_loss_weight
+            losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t) * reg_loss_weight
 
         return losses
 
     def _set_criterion(self):
         # RPN losses (cls_loss, reg_loss)
-        self.cls_criterion = nn.BCELoss() # log loss
-        self.reg_criterion = nn.SmoothL1Loss() # robust loss
+        self.rpn_cls_criterion = nn.BCELoss() # log loss
+        self.rpn_box_criterion = nn.SmoothL1Loss() # robust loss
 
         # and something more...
 

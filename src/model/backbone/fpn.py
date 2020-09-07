@@ -9,9 +9,9 @@ class FPN(nn.Module):
         
         self.backbone = conf_backbone['backbone_type']
         assert self.backbone in ['R50', 'R101']
-        self.ch_number = conf_backbone['FPN']['feature_channel_number']
-        
-        self.features_name = conf_backbone['FPN']['feature_name']
+        self.ch_number = conf_backbone['feature_channel_number']
+
+        self.features_name = ['p2', 'p3', 'p4', 'p5', 'p6']
 
         self._build_model()
 
@@ -39,18 +39,21 @@ class FPN(nn.Module):
 
         output_features = []
         prev_feature = None
-        for idx, feat_name in enumerate(self.features_name):
-            lateral_feature = self.lateral_conv[idx](features[idx])
+        for idx, feature in enumerate(features):
+            lateral_feature = self.lateral_conv[idx](feature)
             if prev_feature is not None:
                 upsample_feature = F.interpolate(prev_feature, scale_factor=2, mode="nearest")
                 prev_feature = lateral_feature + upsample_feature
             else:
                 prev_feature = lateral_feature
             output_features.append(self.output_conv[idx](prev_feature))
+        # output_features : [p5, p4, p3, p2]
 
-        # TODO p6 feature implementation
-        
-        return output_features
+        # p6 feature
+        p6 = F.max_pool2d(output_features[0], kernel_size=2)
+        output_features.insert(0, p6)
+
+        return output_features # [p6, p5, p4, p3, p2]
 
     def get_feature_channel(self):
         return self.ch_number
@@ -60,8 +63,7 @@ class FPN(nn.Module):
 
 
 if __name__ == '__main__':
-    ff = {'feature_channel_number': 256, 'feature_name': ['p5', 'p4', 'p3', 'p2']}
-    cfg = {'FPN': ff, 'backbone_type':'R50'}
+    cfg = {'FPN': True, 'feature_channel_number':256, 'backbone_type':'R50'}
     bb = FPN(cfg)
     x = torch.randn(1, 3, 1024, 1024)
     y = bb(x)

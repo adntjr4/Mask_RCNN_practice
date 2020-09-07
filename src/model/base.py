@@ -11,7 +11,6 @@ class BaseModel(nn.Module):
     def __init__(self, conf_model):
         super().__init__()
 
-        self.FPN_mode = conf_model['FPN_mode']
         self.conf_backbone = conf_model['backbone']
         self.conf_RPN = conf_model['RPN']
 
@@ -19,14 +18,14 @@ class BaseModel(nn.Module):
         self._build_RPN()
 
     def _build_backbone(self):
-        if self.FPN_mode:
+        if 'FPN' in self.conf_backbone:
             self.backbone_model = FPN(self.conf_backbone)
         else:
             self.backbone_model = BackBone(self.conf_backbone)
 
     def _build_RPN(self):
         input_size = self.conf_backbone['input_size']
-        self.RPN = RPN( self.FPN_mode, 
+        self.RPN = RPN( 'FPN' in self.conf_backbone,
                         self.backbone_model.get_feature_channel(), 
                         self.backbone_model.get_feature_size(input_size),
                         self.conf_RPN)

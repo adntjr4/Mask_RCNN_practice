@@ -1,0 +1,29 @@
+data_loader:
+  data_dir: data/coco
+  
+  # annotation file should have json format
+  train_instance: annotations/instances_train2017.json
+  val_instance: annotations/instances_val2017.json
+  test_instance: annotations/image_info_test2017.json
+  train_data: train2017
+  val_data: val2017
+  test_data: test2017
+
+  input_size: [1024, 1024]
+  batch_size: 1
+  num_workers: 4
+
+train:
+  top_k: 12000
+  RPN_reg_loss_weight: 1.
+  RPN_sample_number: 256
+  max_epoch: 100
+  optimizer: Adam
+  lr: 1.0e-4
+  checkpoint_dir: data/saved/checkpoint
+
+evaluate:
+  RPN_cls_threshold: 0.7
+
+
+  

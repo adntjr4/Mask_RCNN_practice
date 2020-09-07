@@ -40,7 +40,7 @@ if __name__ == '__main__':
     
     args = args.parse_args()
 
-    args.resume = True
+    #args.resume = True
 
     assert args.config is not None, 'config file path is needed'
 
