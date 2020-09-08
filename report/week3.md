@@ -72,14 +72,19 @@
 - 다음 주까지 목표
     - [x] config file 구조 수정하기
     - [x] trainer에 기능 on/off 넣기
+
     - [ ] rpn process 재정립
     - [ ] basemodel 테스트
+    - [ ] rpn for human dectection
+    - [ ] multiGPU setting
+
     - [ ] fpn debug w/o box regression
     - [ ] fpn을 위한 rpn 함수 구조 체계화
     - [ ] 시간 측정
-    - [ ] rpn for human dectection
-    - [ ] fpn 작동
-    - [ ] multiGPU setting
+    - [ ] fpn debug
+
+    - [ ] opencv affine transformation 만들기
+
     - [ ] RoIPooling 추가
     - [ ] classification network (box head)
 

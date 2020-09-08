@@ -1,65 +1,131 @@
-
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 
-from src.util.util import IoU, nms
 from src.model.rpn.rpn_head import RPNHead
-from src.model.anchor_generate import generate_anchor_form, box_regression, calculate_regression_parameter
-
+from src.model.anchor_func import ( generate_anchor_form, 
+                                    box_regression, 
+                                    anchor_preprocessing,
+                                    calculate_regression_parameter,
+                                    anchor_labeling_per_batch,
+                                    training_anchor_selection_per_batch,
+                                    training_bbox_regression_calculation,
+                                    reshape_output,
+                                    nms )
 
 class RPN(nn.Module):
     '''
     F: number of feature map
     B: batch size
+    A: number of entire anchors
     N: number of object
-    k: number of anchor
+    k: number of anchors per feature
     W: width of anchor feature map
     H: height of anchor feature map
     P: number of positive anchor
+    R: number of proposed RoI
     '''
 
     def __init__(self, FPN_mode, feature_channel, feature_size, conf_RPN):
         super().__init__()
 
-        self.rpn_head = RPNHead(FPN_mode, conf_RPN)
+        # init rpn head
+        self.rpn_head = RPNHead(FPN_mode, feature_channel, conf_RPN)
 
-        self.FPN_mode = FPN_mode
+        # init configuration values
         self.pos_thres = conf_RPN['positive_threshold']
         self.neg_thres = conf_RPN['negative_threshold']
-        self.init_weight = conf_RPN['parameter_init_weight']
         self.reg_weight = conf_RPN['regression_weight']
         self.nms_thres = conf_RPN['nms_threshold']
+        self.k = conf_RPN['pre_nms_top_k']
+        self.N = conf_RPN['proposal_N']
+        self.proposal_thres = conf_RPN['proposal_threshold']
 
         self.feature_size = feature_size
         self.image_size = conf_RPN['input_size']
 
+        # make default anchor set
         self.anchor = self.rpn_head.get_anchor_type()
-        self.num_anchor = self.rpn_head.get_anchor_number()
-        self._set_anchor()
-
-        # build layers
-        inter_channel = conf_RPN['intermediate_channel_number']
-        self.inter_conv = nn.Conv2d(feature_channel, inter_channel, kernel_size=3, padding=1)
-        self.cls_conv = nn.Conv2d(inter_channel, 1*self.num_anchor, kernel_size=1)
-        self.reg_conv = nn.Conv2d(inter_channel, 4*self.num_anchor, kernel_size=1)
-
-    def _set_anchor(self):
-        # set default anchors for each features(fpn) or just one feature(backbone)
         for idx, default_anchor in enumerate(generate_anchor_form(self.anchor, self.feature_size, self.image_size)):
             self.register_buffer('default_anchor_bbox%d'%idx, default_anchor) # [k, H, W, 4]
 
     def forward(self, features):
-        cls_score = []
-        regression_variables = []
-        for idx, feature in enumerate(features):
-            inter_feature = F.relu(self.inter_conv(feature))
-            cls_score.append(torch.sigmoid(self.cls_conv(inter_feature))) # [B, 1*k, H, W]
-            regression_variables.append(self.reg_conv(inter_feature))     # [B, 4*k, H, W]
+        rpn_out = self.rpn_head(features)
+        #rpn_out['rpn_RoI'] = self.region_proposal_top_N(rpn_out['rpn_cls_score'], rpn_out['rpn_bbox_pred'], self.N)
+        return rpn_out
 
-        return {'cls_out': cls_score, 'reg_out': regression_variables}
+    def forward_threshold(self, features):
+        rpn_out = self.rpn_head(features)
+        #rpn_out['rpn_RoI'] = self.region_proposal_threshold(rpn_out['rpn_cls_score'], rpn_out['rpn_bbox_pred'], self.proposal_thres)
+        return rpn_out
 
-    def get_anchor_label(self, gt, regression_variables):
+    def get_anchor_label(self, gt_bbox, cls_score, bbox_pred):
+        '''
+        Args:
+            gt_bbox (Tensor) : [B, N, 4]
+            cls_score (List) : List([B, 1*k, H, W])
+            bbox_pred (List) : List([B, 4*k, H, W])
+        '''
+        batch_size, _, _ = gt_bbox.size()
+
+        # get initial anchors
+        anchor_list = []
+        for idx in range(len(self.anchor)):
+            anchor_list.append(getattr(self, 'default_anchor_bbox%d'%idx).detach().view(-1,4).repeat(batch_size,1,1)) # [B, A, 4]
+
+        # anchor preprocessing (top_k, bbox regression, nms etc.)
+        o_anc, p_anc, p_cls, p_bbox, p_keep = anchor_preprocessing(anchor_list, cls_score, bbox_pred, self.k, self.reg_weight, self.nms_thres)
+
+        anchor_info = dict()
+        anchor_info['origin_anchors'] = o_anc
+        anchor_info['anchors'] = p_anc
+        anchor_info['cls_score'] = p_cls
+        anchor_info['bbox_pred'] = p_bbox
+        anchor_info['keep_map'] = p_keep
+        anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_per_batch(anchor_info['anchors'], anchor_info['keep_map'], gt_bbox, self.pos_thres, self.neg_thres)
+
+        return anchor_info
+
+    def get_cls_output_target(self, cls_score, anchor_label, sample_number):
+        return training_anchor_selection_per_batch(cls_score, anchor_label, sample_number)
+
+    def get_box_output_target(self, gt_bbox, bbox_pred, anchor_label, closest_gt):
+        return training_bbox_regression_calculation(gt_bbox, bbox_pred, anchor_label, closest_gt)
+
+    def region_proposal_top_N(self, cls_score, bbox_pred, N):
+        raise NotImplementedError
+
+    def region_proposal_threshold(self, cls_score, bbox_pred, threshold):
+        '''
+        Args:
+            cls_score (Tensor) : List([B, 1*k, H, W])
+            bbox_pred (Tensor) : List([B, 4*k, H, W])
+        Returns:
+            RoI_bbox (Tensor) : [R, 4]
+        '''
+        candidate_bbox = []
+        candidate_score = []
+        for idx, one_cls_score in enumerate(cls_score):
+            batch_size = one_cls_score.size()[0]
+
+            # anchor_bbox expand as batch size
+            #anchor_bbox = self.default_anchor_bbox.repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
+            anchor_bbox = getattr(self, 'default_anchor_bbox%d'%idx).repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
+
+            # box regression
+            if bbox_pred != None:
+                moved_anchor_bbox = box_regression(anchor_bbox, bbox_pred[idx], self.reg_weight) # [B, k, H, W, 4]
+            else:
+                moved_anchor_bbox = anchor_bbox
+
+            RoI_bool = one_cls_score > threshold
+            candidate_bbox.append(moved_anchor_bbox[RoI_bool])
+            candidate_score.append(one_cls_score[RoI_bool])
+        RoI_bbox = nms(torch.cat(candidate_bbox), torch.cat(candidate_score), self.nms_thres)
+
+        return RoI_bbox
+
+    def get_anchor_label_deprecated(self, gt, regression_variables):
         '''
         Args:
             gt (Dict) : {img, label, bbox}
@@ -156,7 +222,6 @@ class RPN(nn.Module):
             highest_gt = torch.stack([highest_gt_batch, highest_gt_object], dim=1)
             highest_gt_list.append(highest_gt)
         
-
         # return dictionary
         return_dict = dict()
         return_dict['anchor_bbox'] = moved_anchor_bbox_list
@@ -166,129 +231,6 @@ class RPN(nn.Module):
 
         return return_dict
 
-    def get_proposed_RoI(self, cls_score, regression_variables, threshold):
-        '''
-        R : number of proposed RoI
-        Args:
-            cls_score (Tensor) : List([B, 1*k, H, W])
-            regression_variables (Tensor) : List([B, 4*k, H, W])
-        Returns:
-            RoI_bbox (Tensor) : [R, 4]
-        '''
-        candidate_bbox = []
-        candidate_score = []
-        for idx, one_cls_score in enumerate(cls_score):
-            batch_size = one_cls_score.size()[0]
-
-            # anchor_bbox expand as batch size
-            #anchor_bbox = self.default_anchor_bbox.repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
-            anchor_bbox = getattr(self, 'default_anchor_bbox%d'%idx).repeat(batch_size,1,1,1,1) # [k, H, W, 4] -> [B, k, H, W, 4]
-
-            # box regression
-            if regression_variables != None:
-                moved_anchor_bbox = box_regression(anchor_bbox, regression_variables[idx], self.reg_weight) # [B, k, H, W, 4]
-            else:
-                moved_anchor_bbox = anchor_bbox
-
-            RoI_bool = one_cls_score > threshold
-            candidate_bbox.append(moved_anchor_bbox[RoI_bool])
-            candidate_score.append(one_cls_score[RoI_bool])
-        RoI_bbox = nms(torch.cat(candidate_bbox), torch.cat(candidate_score), self.nms_thres)
-
-        return RoI_bbox
-
-    def RPN_label_select(self, cls_out, anchor_label, sample_number):
-        '''
-        random sampling positive, negative anchor with limited number
-        P : number of positive anchor
-        N : number of negative anchor
-        Args:
-            cls_out : List(Tensor[B, k, H, W])
-            anchor_label : dict({anchor_pos_label, anchor_neg_label})
-                anchor_pos_label : List(Tensor[B, k, H, W]) (bool)
-                anchor_neg_label : List(Tensor[B, k, H, W]) (bool)
-        Return:
-            sampled_cls_out : Tensor[sample_number]
-            label : Tensor[P+N] (front:ones, back:zeros)
-        '''
-        pos_cls_out_list = []
-        neg_cls_out_list = []
-
-        for idx, one_cls_out in enumerate(cls_out):
-            pos_label, neg_label = anchor_label['anchor_pos_label'][idx], anchor_label['anchor_neg_label'][idx]
-
-            # gathering whole positive and negative class out
-            pos_cls_out_list.append(one_cls_out[pos_label])
-            neg_cls_out_list.append(one_cls_out[neg_label])
-
-        pos_cls_out, neg_cls_out = torch.cat(pos_cls_out_list), torch.cat(neg_cls_out_list)
-        pos_num,     neg_num     = pos_cls_out.size()[0], neg_cls_out.size()[0]
-
-        # random sampling
-        pivot = int(sample_number/2)
-        if pos_num <= pivot:
-            sampled_pos_cls_out = pos_cls_out
-            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sample_number-pos_num]]
-            sampled_pos_num = pos_num
-            sampled_neg_num = sample_number-pos_num
-        else:
-            sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:pivot]]
-            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sample_number-pivot]]
-            sampled_pos_num = pivot
-            sampled_neg_num = sample_number-pivot
-
-        sampled_cls_out = torch.cat([sampled_pos_cls_out, sampled_neg_cls_out])
-
-        label = torch.cat([pos_cls_out.new_ones((sampled_pos_num)), pos_cls_out.new_zeros((sampled_neg_num))])
-
-        return sampled_cls_out, label
-
-    def RPN_cal_t_regression(self, reg_out, gt, anchor_label):
-        '''
-        P : number of positive anchor
-        Args:
-            reg_out (Tensor) : List([B, 4*k, H, W])
-            gt : {img, img_size, label, bbox}
-                bbox (Tensor) : [B, N, 4]
-            anchor_label : {anchor_bbox, anchor_pos_label, pos_indice}
-                anchor_bbox (Tensor) : [B, k, H, W, 4]
-                anchor_pos_label (Tensor) : [B, k, H, W] (bool)
-                highest_gt (Tensor) : [P, 2] (batch, object number)
-        Returns:
-            predicted_t  : Tensor[P, 4]
-            calculated_t : Tensor[P, 4]
-        '''
-        predicted_t = []
-        calculated_t = []
-        for idx, one_reg_out in enumerate(reg_out):
-            anchor_bbox, pos_label, highest_gt = anchor_label['anchor_bbox'][idx], anchor_label['anchor_pos_label'][idx], anchor_label['highest_gt'][idx]
-
-            B, k4, H, W = one_reg_out.size()
-            k = int(k4/4)
-
-            # reshape reg_out for predicted_t
-            predicted_t.append(one_reg_out.view(B, k, 4, H, W).permute(0,1,3,4,2)[pos_label]) # [P, 4]
-
-            # calculate box regression parameter
-            pos_anchor_bbox = anchor_bbox[pos_label] # [P, 4] (xywh)
-            pos_gt_bbox = torch.stack([gt['bbox'][batch_num][gt_num] for batch_num, gt_num in highest_gt]) # [P, 4] (xywh)
-
-            calculated_t.append(calculate_regression_parameter(pos_anchor_bbox, pos_gt_bbox, self.reg_weight))
-
-        return torch.cat(predicted_t), torch.cat(calculated_t)
-
-    def _get_true_anchors(self, gt, reg_out):
-        true_bbox_list = []
-        anchor_label = self.get_anchor_label(gt, reg_out)
-        for idx, bbox in enumerate(anchor_label['anchor_bbox']):
-            true_bbox_list.append(bbox[anchor_label['anchor_pos_label'][idx]])
-        return torch.cat(true_bbox_list)
-
-
-if __name__ == "__main__":
-    xywh0 = torch.Tensor([1., 1., 1., 1.])
-    xywh1 = torch.Tensor([0., 0., 3., 3.])
-
-    print(xywh0)
-    print(xywh1)
-    print(IoU(xywh0, xywh1))
+    def _get_positive_anchors(self, gt, bbox_pred):
+        raise NotImplementedError
+        return positive_anchors

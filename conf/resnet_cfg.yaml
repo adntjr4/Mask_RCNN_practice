@@ -8,9 +8,12 @@ model:
     intermediate_channel_number: 256
     positive_threshold: 0.7
     negative_threshold: 0.3
-    parameter_init_weight: 0.1
     regression_weight: [0.1, 0.1, 0.1, 0.1]
     nms_threshold: 0.7
+
+    pre_nms_top_k: 6000
+    proposal_N: 200
+    proposal_threshold: 0.7
 
 _TRAIN_: ./training_cfg.yaml
   

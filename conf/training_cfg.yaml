@@ -21,9 +21,3 @@ train:
   optimizer: Adam
   lr: 1.0e-4
   checkpoint_dir: data/saved/checkpoint
-
-evaluate:
-  RPN_cls_threshold: 0.7
-
-
-  

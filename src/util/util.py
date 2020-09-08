@@ -73,6 +73,11 @@ def img_process(img, resize):
 def IoU(xywh0:torch.Tensor, xywh1:torch.Tensor):
     '''
     calculate IoUs using tensor
+    Args:
+        xywh0 (Tensor) : [..., 4]
+        xywh1 (Tensor) : [..., 4]
+    Returns:
+        IoUs (Tensor) : [...]
     '''
     assert xywh0.size() == xywh1.size(), 'for calculate IoU, size of two tensor must be same.'
 
@@ -85,42 +90,13 @@ def IoU(xywh0:torch.Tensor, xywh1:torch.Tensor):
     U_x, U_y, U_x_, U_y_ =  torch.max(x0, x1),   \
                             torch.max(y0, y1),   \
                             torch.min(x0_, x1_), \
-                            torch.min(y0_, y1_) 
+                            torch.min(y0_, y1_)
 
     inter_area = (U_x_-U_x).clamp(min=0.) * (U_y_-U_y).clamp(min=0.)
     union_area = w0*h0 + w1*h1 - inter_area
 
-    return inter_area / union_area
+    return (inter_area / union_area).squeeze(-1)
 
-def nms(bbox, score, threshold):
-    '''
-    non-maximum suppression
-    bbox (Tensor) : [N, 4]
-    score (Tensor) : [N]
-    threshold (float)
-    '''
-    assert int(score.size()[0]) == int(bbox.size()[0]), "size of two arg tensor must be same"
-    bbox_number = int(score.size()[0])
-
-    cross_bbox0 = bbox.repeat(bbox_number, 1, 1)
-    cross_bbox1 = cross_bbox0.permute(1,0,2)
-
-    cross_IoU = IoU(cross_bbox0, cross_bbox1).squeeze()
-
-    cross_score0 = score.repeat(bbox_number, 1)
-    cross_score1 = cross_score0.permute(1,0)
-
-    cross_score_comparision = cross_score1-cross_score0
-
-    # over threshold IoU value
-    cross_IoU_bool = cross_IoU > threshold
-    
-    # less score 
-    cross_score_comparision_bool = cross_score_comparision < 0.
-
-    remain_bool = torch.logical_not(torch.logical_and(cross_IoU_bool, cross_score_comparision_bool).sum(dim=1, dtype=torch.bool))
-
-    return bbox[remain_bool]
 
 if __name__ == "__main__":
     testbbox = torch.Tensor([[0., 0., 1., 1.], [0., 0., 1., 1.2], [0., 0., 1.2, 1.], [1., 1., 1., 1.]])

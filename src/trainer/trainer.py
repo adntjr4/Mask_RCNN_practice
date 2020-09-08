@@ -103,23 +103,23 @@ class Trainer:
     def criterion(self, model_out, gt):
         losses = dict()
 
-        cls_out = model_out['cls_out'] # List([B, 2*k, H, W])
-        reg_out = model_out['reg_out'] # List([B, 4*k, H, W])
+        cls_score = model_out['rpn_cls_score'] # List([B, 1*k, H, W])
+        bbox_pred = model_out['rpn_bbox_pred'] # List([B, 4*k, H, W])
         sample_number = self.config['train']['RPN_sample_number']
 
         reg_loss_weight = self.config['train']['RPN_reg_loss_weight']
 
         # [RPN] anchor labeling
-        anchor_label = self.model.RPN.get_anchor_label(gt, reg_out)
+        anchor_info = self.model.RPN.get_anchor_label(gt['bbox'], cls_score, bbox_pred)
 
         # [RPN] class loss
         if self.onoff['rpn_cls']:
-            selected_cls_out, label = self.model.RPN.RPN_label_select(cls_out, anchor_label, sample_number)
+            selected_cls_out, label = self.model.RPN.get_cls_output_target(anchor_info['cls_score'], anchor_info['anchor_label'], sample_number)
             losses['rpn_cls_loss'] = self.rpn_cls_criterion(selected_cls_out, label)
 
         # [RPN] bbox regression loss
-        if self.onoff['rpn_box'] and anchor_label['highest_gt'][0].size()[0] != 0: # N != 0 
-            predicted_t, calculated_t = self.model.RPN.RPN_cal_t_regression(reg_out, gt, anchor_label)
+        if self.onoff['rpn_box']:
+            predicted_t, calculated_t = self.model.RPN.get_box_output_target(gt['bbox'], anchor_info['bbox_pred'], anchor_info['anchor_label'])
             losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t) * reg_loss_weight
 
         return losses
