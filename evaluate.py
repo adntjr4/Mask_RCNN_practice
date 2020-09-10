@@ -21,18 +21,20 @@ def main(config):
     model = BaseModel(conf_model)
     model.load_state_dict(load_model(config['weight']))
     model.eval()
+    model.cuda()
 
     # input image load
     img = cv2.imread(config['input'])
     input_size = tuple(config['data_loader']['input_size'])
     img_tensor, _ = img_process(img, input_size)
+    img_tensor = img_tensor.cuda()
 
     # get RoI bbox
     model_out = model(img_tensor.unsqueeze(0))
-    RoI_bbox = model.RPN.get_proposed_RoI(model_out['cls_out'], model_out['reg_out'], config['evaluate']['RPN_cls_threshold'])
+    RoI_bbox = model.RPN.region_proposal_threshold(model_out['rpn_cls_score'], model_out['rpn_bbox_pred'], config['model']['RPN']['proposal_threshold'])
 
-    boxed_img = draw_boxes(img_tensor, RoI_bbox)
-    cv2.imwrite('data/tmp/RPN_test_moved.jpg', boxed_img)
+    boxed_img = draw_boxes(img_tensor.cpu(), RoI_bbox.cpu())
+    cv2.imwrite('data/tmp/RPN_evaluation.jpg', boxed_img)
 
 
 if __name__ == '__main__':
@@ -44,7 +46,7 @@ if __name__ == '__main__':
     
     args = args.parse_args()
 
-    args.weight = 'data/saved/checkpoint/R50_fpn_checkpoint.pth'
+    args.weight = 'data/saved/checkpoint/R50_checkpoint.pth'
     args.input = 'data/coco/val2017/000000397133.jpg'
 
     assert args.config is not None, 'config file path is needed'

@@ -7,13 +7,13 @@ from torch import optim
 
 
 class Trainer:
-    def __init__(self, model, data_loader, config, onoff=None):
+    def __init__(self, model, data_loader, config, loss_switch=None):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
 
-        if onoff is None:
-            self.onoff = {'rpn_cls':True, 'rpn_box':True}
+        if loss_switch is None:
+            self.loss_switch = {'rpn_cls':True, 'rpn_box':True}
         else:
-            self.onoff = onfff
+            self.loss_switch = loss_switch
 
         self.model = model
         self.model.cuda()
@@ -45,28 +45,12 @@ class Trainer:
             # after training  epoch
             #if self.epoch % 10 == 0:
             #    self.save_checkpoint()
-            
-            self.log_out('[epoch %d]'%(self.epoch+1))
 
-        self.log_out('testing')
+        self.log_out('saving...')
         self.save_checkpoint()
 
-        # image out (for debugging)
-        for data in self.data_loader:
-            model_out = self.model(data['img'].cuda())
-            RoI_bbox = self.model.RPN.get_proposed_RoI(model_out['cls_out'], model_out['reg_out'], self.config['evaluate']['RPN_cls_threshold'])
-            from src.util.util import draw_boxes
-            import cv2
-            boxed_img = draw_boxes(data['img'][0], RoI_bbox)
-            cv2.imwrite('data/tmp/RPN_test.jpg', boxed_img)
-
-            model_out = self.model(data['img'].cuda())
-            true_bbox = self.model.RPN._get_true_anchors({k: v.cuda() for k, v in data.items()}, model_out['reg_out'])
-            boxed_img = draw_boxes(data['img'][0], true_bbox)
-            cv2.imwrite('data/tmp/RPN_true_labeling.jpg', boxed_img)
-
     def train_1epoch(self):
-        for data in self.data_loader:
+        for idx, data in enumerate(self.data_loader):
             # to device
             cuda_data = {k: v.cuda() for k, v in data.items()}
 
@@ -83,8 +67,10 @@ class Trainer:
             self.optimizer.step()
 
             # print loss
+            loss_out_str = '[epoch %03d] %04d/%04d : '%(self.epoch+1, idx+1, len(self.data_loader)) 
             for loss_name in losses:
-                self.log_out('%s : %.4f'%(loss_name, losses[loss_name]))
+                loss_out_str += '%s : %.4f / '%(loss_name, losses[loss_name])
+            self.log_out(loss_out_str)
 
     def save_checkpoint(self):
         checkpoint_dir = self.config['train']['checkpoint_dir']
@@ -113,13 +99,13 @@ class Trainer:
         anchor_info = self.model.RPN.get_anchor_label(gt['bbox'], cls_score, bbox_pred)
 
         # [RPN] class loss
-        if self.onoff['rpn_cls']:
+        if self.loss_switch['rpn_cls']:
             selected_cls_out, label = self.model.RPN.get_cls_output_target(anchor_info['cls_score'], anchor_info['anchor_label'], sample_number)
             losses['rpn_cls_loss'] = self.rpn_cls_criterion(selected_cls_out, label)
 
         # [RPN] bbox regression loss
-        if self.onoff['rpn_box']:
-            predicted_t, calculated_t = self.model.RPN.get_box_output_target(gt['bbox'], anchor_info['bbox_pred'], anchor_info['anchor_label'])
+        if self.loss_switch['rpn_box']:
+            predicted_t, calculated_t = self.model.RPN.get_box_output_target(gt['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
             losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t) * reg_loss_weight
 
         return losses

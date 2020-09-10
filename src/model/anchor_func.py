@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn.functional as F
 
@@ -35,7 +37,7 @@ def generate_anchor_form(anchor, feature_size, image_size):
                 
             anchor_bbox_t = torch.stack((x,y,w,h), dim=2) # [H, W, 4]
             anchor_bbox_list.append(anchor_bbox_t)
-        anchor_bbox.append(torch.stack(anchor_bbox_list)) # [k, H, W, 4]
+        anchor_bbox.append(torch.stack(anchor_bbox_list).cuda()) # [k, H, W, 4]
     return anchor_bbox
 
 def anchor_preprocessing(anchors, cls_score, bbox_pred, top_k, bbox_weight, nms_threshold):
@@ -46,10 +48,11 @@ def anchor_preprocessing(anchors, cls_score, bbox_pred, top_k, bbox_weight, nms_
         bbox_pred (Tensor) : List([B, 4*k, H, W])
         top_k (int)
     Returns:
+        origin_anchors (Tensor) : [B, A, 4]
         post_anchors (Tensor) : [B, A, 4]
-        post_cls_score (Tensor) : [B, A, 4]
+        post_cls_score (Tensor) : [B, A, 1]
         post_bbox_pred (Tensor) : [B, A, 4]
-        post_keep_amp (Tensor) : [B, A, 4]
+        post_keep_map (Tensor) : [B, A]
     '''
     # reshape tensor
     post_anchors = torch.cat(anchors, dim=1)
@@ -65,6 +68,7 @@ def anchor_preprocessing(anchors, cls_score, bbox_pred, top_k, bbox_weight, nms_
 
     # NMS
     post_keep_map = nms_per_batch(post_anchors, post_cls_score, nms_threshold)
+    #post_keep_map = post_anchors.new_ones(post_anchors.size()[0], post_anchors.size()[1], dtype=torch.bool)
 
     return origin_anchors, post_anchors, post_cls_score, post_bbox_pred, post_keep_map
 
@@ -90,6 +94,15 @@ def box_regression(bbox, variables, weight):
     t_w *= w_w
     t_h *= w_h
 
+    scale_clamp = math.log(1024 / 32)
+    move_clamp_max = 0.5
+    move_clamp_min = -0.5
+
+    t_x = torch.clamp(t_x, min=move_clamp_min, max=move_clamp_max)
+    t_y = torch.clamp(t_y, min=move_clamp_min, max=move_clamp_max)
+    t_w = torch.clamp(t_w, max=scale_clamp)
+    t_h = torch.clamp(t_h, max=scale_clamp)
+
     m_x = a_w * t_x + a_x
     m_y = a_h * t_y + a_y
     m_w = a_w * t_w.exp()
@@ -108,26 +121,27 @@ def calculate_regression_parameter(anchor_bbox, gt_bbox, weight):
     Returns:
         regression_parameter (Tensor) : [..., N, 4]
     '''
-    cat_dim = len(anchor_bbox.size())-1
+    with torch.no_grad():
+        cat_dim = len(anchor_bbox.size())-1
 
-    a_x, a_y, a_w, a_h = anchor_bbox.split(1, dim=cat_dim)    # [..., N, 1]
-    g_x, g_y, g_w, g_h = gt_bbox.split(1, dim=cat_dim)        # [..., N, 1]
+        a_x, a_y, a_w, a_h = anchor_bbox.split(1, dim=cat_dim)    # [..., N, 1]
+        g_x, g_y, g_w, g_h = gt_bbox.split(1, dim=cat_dim)        # [..., N, 1]
 
-    t_x = (g_x - a_x) / a_w
-    t_y = (g_y - a_y) / a_h
-    t_w = (g_w / a_w).log()
-    t_h = (g_h / a_h).log()
+        t_x = (g_x - a_x) / a_w
+        t_y = (g_y - a_y) / a_h
+        t_w = (g_w / a_w).log()
+        t_h = (g_h / a_h).log()
 
-    w_x, w_y, w_w, w_h = weight
+        w_x, w_y, w_w, w_h = weight
 
-    t_x /= w_x
-    t_y /= w_y
-    t_w /= w_w
-    t_h /= w_h
+        t_x /= w_x
+        t_y /= w_y
+        t_w /= w_w
+        t_h /= w_h
 
-    regression_parameter = torch.cat([t_x, t_y, t_w, t_h], dim=cat_dim)   # [..., N, 4]
+        regression_parameter = torch.cat([t_x, t_y, t_w, t_h], dim=cat_dim)   # [..., N, 4]
 
-    return regression_parameter
+        return regression_parameter
 
 def top_k_per_batch(anchors, cls_score, bbox_pred, k):
     '''
@@ -142,12 +156,15 @@ def top_k_per_batch(anchors, cls_score, bbox_pred, k):
         top_k_cls_score (Tensor) : [B, k, 1] (sorted)
         top_k_bbox_pred (Tensor) : [B, k, 4] (sorted as follow cls_score)
     '''
-    top_k_cls_score, indices = torch.sort(cls_score, dim=1, descending=True)
-    indices = indices.repeat(1,1,4) # [B, A, 4]
-    top_k_anchors = anchors.gather(dim=1, index=indices)[:,:k,:]
-    top_k_cls_score = top_k_cls_score[:,:k,:]
-    top_k_bbox_pred = bbox_pred.gather(dim=1, index=indices)[:,:k,:]
-    return top_k_anchors, top_k_cls_score, top_k_bbox_pred
+    if anchors.size()[1] < k:
+        top_k_cls_score, indices = torch.sort(cls_score, dim=1, descending=True)
+        indices = indices.repeat(1,1,4) # [B, A, 4]
+        top_k_anchors = anchors.gather(dim=1, index=indices)[:,:k,:]
+        top_k_cls_score = top_k_cls_score[:,:k,:]
+        top_k_bbox_pred = bbox_pred.gather(dim=1, index=indices)[:,:k,:]
+        return top_k_anchors, top_k_cls_score, top_k_bbox_pred
+    else:
+        return anchors, cls_score, bbox_pred
 
 def remove_invaild_bbox(anchors, bbox_pred, cls_score):
     '''
@@ -173,29 +190,30 @@ def nms(bbox, score, threshold):
     Returns:
         keep_map (Tensor) : [N]
     '''
-    assert int(score.size()[0]) == int(bbox.size()[0]), "size of two arg tensor must be same"
+    with torch.no_grad():
+        assert int(score.size()[0]) == int(bbox.size()[0]), "size of two arg tensor must be same"
 
-    bbox_number = int(score.size()[0])
+        bbox_number = int(score.size()[0])
 
-    cross_bbox0 = bbox.repeat(bbox_number, 1, 1)
-    cross_bbox1 = cross_bbox0.permute(1,0,2)
+        cross_bbox0 = bbox.repeat(bbox_number, 1, 1)
+        cross_bbox1 = cross_bbox0.permute(1,0,2)
 
-    cross_IoU = IoU(cross_bbox0, cross_bbox1)
+        cross_IoU = IoU(cross_bbox0, cross_bbox1)
 
-    cross_score0 = score.repeat(1, bbox_number)
-    cross_score1 = cross_score0.permute(1,0)
+        cross_score0 = score.squeeze(-1).repeat(bbox_number, 1)
+        cross_score1 = cross_score0.permute(1,0)
 
-    cross_score_comparision = cross_score0-cross_score1
+        cross_score_comparision = cross_score0 - cross_score1
 
-    # over threshold IoU value
-    cross_IoU_bool = cross_IoU > threshold
-    
-    # less score 
-    cross_score_comparision_bool = cross_score_comparision < 0.
+        # over threshold IoU value
+        cross_IoU_bool = cross_IoU > threshold
+        
+        # less score 
+        cross_score_comparision_bool = cross_score_comparision > 0.
 
-    keep_map = torch.logical_not(torch.logical_and(cross_IoU_bool, cross_score_comparision_bool).sum(dim=1, dtype=torch.bool))
+        keep_map = torch.logical_not(torch.logical_and(cross_IoU_bool, cross_score_comparision_bool).any(1))
 
-    return keep_map
+        return keep_map
 
 def nms_per_batch(bbox, score, threshold):
     '''
@@ -220,7 +238,7 @@ def anchor_labeling_per_batch(anchor, keep, gt_bbox, pos_thres, neg_thres):
         gt_bbox (Tensor) : [B, N, 4]
     Returns:
         anchor_label (Tensor) : [B, A] (1, 0, -1)
-        closest_gt (Tensor) : [B, A] (0 ~ N-1)
+        closest_gt (Tensor) : [P, 2] (0 ~ B-1), (0 ~ N-1)
     '''
     _        , anchor_num, _ = anchor.size()
     batch_size, object_num, _ = gt_bbox.size()
@@ -237,16 +255,21 @@ def anchor_labeling_per_batch(anchor, keep, gt_bbox, pos_thres, neg_thres):
     anchor_neg_label = torch.logical_not((cross_IoU > neg_thres).any(1)) # [B, A]
 
     # find closest anchor for each gt_bbox
+    cross_IoU.permute(0,2,1)[keep.logical_not()] *= 0.
     closest_indices = torch.argmax(cross_IoU, dim=2) # [B, N]
-    one_hot_indices = F.one_hot(closest_indices, num_classes=anchor_num).type(torch.bool) # [B, N, A]
+    one_hot_indices = F.one_hot(closest_indices, num_classes=anchor_num) # [B, N, A]
+    one_hot_indices = (one_hot_indices * gt_bbox[:,:,2].unsqueeze(-1).repeat(1,1,anchor_num)).type(torch.bool) # [B, N, A] (for select real anchor by multiply width of gt bbox)
     closest_label = one_hot_indices.any(1) # [B, A]
     anchor_pos_label += closest_label
+
+    anchor_pos_label = torch.logical_and(anchor_pos_label, keep)
+    anchor_neg_label = torch.logical_and(anchor_neg_label, keep)
 
     # find closest gt_bbox for each anchor
     closest_gt_indices = torch.argmax(cross_IoU, dim=1) # [B, A]
     closest_gt_object = closest_gt_indices[anchor_pos_label] # [P] (0 ~ N-1)
     closest_gt_batch  = torch.arange(0, batch_size).cuda().repeat(anchor_num, 1).permute(1,0)[anchor_pos_label] # [P] (0 ~ B-1)
-    closest_gt = torch.stack([closest_gt_batch, closest_gt_object], dim=1)
+    closest_gt = torch.stack([closest_gt_batch, closest_gt_object], dim=1) # [P, 2]
 
     # merge anchor label
     anchor_label = anchor_pos_label * 1.0 # [B, A]
@@ -272,7 +295,7 @@ def training_anchor_selection_per_batch(cls_score, anchor_label, sampling_number
     training_cls_gt_list = []
 
     for b_idx in range(batch_size):
-        pos_cls_out, neg_cls_out = cls_score[b_idx][anchor_label[b_idx] > 0], cls_score[b_idx][anchor_label[b_idx] < 0] # [P], [N]
+        pos_cls_out, neg_cls_out = cls_score[b_idx][anchor_label[b_idx] > 0.1], cls_score[b_idx][anchor_label[b_idx] < -0.1] # [P], [N]
         pos_num,     neg_num     = pos_cls_out.size()[0],                     neg_cls_out.size()[0]
 
         # random sampling
@@ -296,50 +319,30 @@ def training_anchor_selection_per_batch(cls_score, anchor_label, sampling_number
 
     return torch.stack(training_cls_score_list), torch.stack(training_cls_gt_list)
 
-def training_bbox_regression_calculation(gt_bbox, bbox_pred, anchor_label, highest_gt):
+def training_bbox_regression_calculation(gt_bbox, origin_anchors, bbox_pred, anchor_label, closest_gt, reg_weight):
     '''
     Args:
         gt_bbox (Tensor) : [B, N, 4]
-        default_anchors (Tensor) : [B, A, 4]
+        origin_anchors (Tensor) : [B, A, 4]
         bbox_pred (Tensor) : [B, A, 4]
         anchor_label (Tensor) : [B, A] (1, 0, -1)
-        highest_gt (Tensor) : [B, A] (0 ~ B-1), (0 ~ N-1)
+        closest_gt (Tensor) : [P, 2] (0 ~ B-1), (0 ~ N-1)
     Returns:
         predicted_t  : Tensor[P, 4]
         calculated_t : Tensor[P, 4]
     '''
-    '''
-    P : number of positive anchor
-    Args:
-        reg_out (Tensor) : List([B, 4*k, H, W])
-        gt : {img, img_size, label, bbox}
-            bbox (Tensor) : [B, N, 4]
-        anchor_label : {anchor_bbox, anchor_pos_label, pos_indice}
-            anchor_bbox (Tensor) : [B, k, H, W, 4]
-            anchor_pos_label (Tensor) : [B, k, H, W] (bool)
-            highest_gt (Tensor) : [P, 2] (batch, object number)
-    Returns:
-        predicted_t  : Tensor[P, 4]
-        calculated_t : Tensor[P, 4]
-    '''
-    predicted_t = []
-    calculated_t = []
-    for idx, one_reg_out in enumerate(reg_out):
-        anchor_bbox, pos_label, highest_gt = anchor_label['anchor_bbox'][idx], anchor_label['anchor_pos_label'][idx], anchor_label['highest_gt'][idx]
+    # calculate target regression parameter
+    positive_anchors = origin_anchors[anchor_label>0.1] # [P, 4]
+    if closest_gt.size()[0] != 0:
+        positive_gt = torch.stack([gt_bbox[batch_num][gt_num] for batch_num, gt_num in closest_gt]) # [P, 4]
+        calculated_t = calculate_regression_parameter(positive_anchors, positive_gt, reg_weight) # [P, 4]
+    else:
+        calculated_t = closest_gt.new_zeros((0,2))
 
-        B, k4, H, W = one_reg_out.size()
-        k = int(k4/4)
+    # reshape output regression prediction
+    predicted_t = bbox_pred[anchor_label>0.1] # [P, 4]
 
-        # reshape reg_out for predicted_t
-        predicted_t.append(one_reg_out.view(B, k, 4, H, W).permute(0,1,3,4,2)[pos_label]) # [P, 4]
-
-        # calculate box regression parameter
-        pos_anchor_bbox = anchor_bbox[pos_label] # [P, 4] (xywh)
-        pos_gt_bbox = torch.stack([gt['bbox'][batch_num][gt_num] for batch_num, gt_num in highest_gt]) # [P, 4] (xywh)
-
-        calculated_t.append(calculate_regression_parameter(pos_anchor_bbox, pos_gt_bbox, self.reg_weight))
-
-    return torch.cat(predicted_t), torch.cat(calculated_t)
+    return predicted_t, calculated_t
 
 def reshape_output(output, n):
     '''

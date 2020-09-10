@@ -14,8 +14,8 @@ model:
     regression_weight: [1., 1., 1., 1.]
     nms_threshold: 0.7
 
-    pre_nms_top_k: 12000
-    proposal_N: 2000
+    pre_nms_top_k: 6000
+    proposal_N: 600
     proposal_threshold: 0.7
 
 _TRAIN_: ./training_cfg.yaml

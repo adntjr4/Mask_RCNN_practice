@@ -10,10 +10,18 @@
     - 기존 : anchor → bbox regression → score threshold → NMS → RoI
     - 바꾼 : anchor → select top k → bbox regression → NMS → "score threshold" or "select top N" → RoI
 - 바꾸면서 코드 구조를 좀 더 체계적으로 바꿈.
+- critical한 bug 수정
+    - 정해진 수의 training sample 고를 때 image 별로 안 고르고 batch에서 고름.
+    - box regression의 loss를 구할 때 box regression을 하고 난 anchor로 구했었음.
+    - labeling할 때 nms에서 걸러진 anchor에서 가장 IoU가 높은 것으로 구해야하는데 nms로 거르기 전 anchor들도 포함되어 있었음.
+    - 하나의 gt_bbox와 가장 IoU가 높은 anchor를 구할 때, gt_bbox tensor의 pad도 실제 anchor로 생각하여 계산 했었음.
 
 ## 질문 사항
 
 ---
+
+## 현재 버그
+- anchor와 loss를 구할 gt를 정하는 곳에 버그가 있음.(가장 높은 IoU)
 
 ## TODO
 
@@ -22,6 +30,7 @@
     - [x] trainer에 기능 on/off 넣기
 
     - [ ] rpn process 재정립
+        - [ ] rpn box regression loss 수정
     - [ ] basemodel 테스트
     - [ ] rpn for human dectection
     - [ ] multiGPU setting

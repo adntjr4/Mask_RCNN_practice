@@ -11,16 +11,18 @@ def load_model(file_name):
 
 def draw_boxes(img, boxes, color=(0,255,0)):
     if type(img) == torch.Tensor:
+        img = img.cpu()
         img = img.permute(1,2,0).numpy()
 
     if type(boxes) == torch.Tensor:
+        boxes = boxes.cpu()
         boxes = boxes.tolist()
 
     for box in boxes:
         x, y, w, h = box
         pt1 = (int(x), int(y))
         pt2 = (int(x+w), int(y+h))
-        img = cv2.rectangle(cv2.UMat(img), pt1, pt2, color, 1)
+        img = cv2.rectangle(cv2.UMat(img), pt1, pt2, color, 2)
 
     return img
 
@@ -79,28 +81,21 @@ def IoU(xywh0:torch.Tensor, xywh1:torch.Tensor):
     Returns:
         IoUs (Tensor) : [...]
     '''
-    assert xywh0.size() == xywh1.size(), 'for calculate IoU, size of two tensor must be same.'
+    with torch.no_grad():
+        assert xywh0.size() == xywh1.size(), 'for calculate IoU, size of two tensor must be same.'
 
-    x0, y0, w0, h0 = xywh0.split(1, dim = len(xywh0.size())-1)
-    x1, y1, w1, h1 = xywh1.split(1, dim = len(xywh0.size())-1)
+        x0, y0, w0, h0 = xywh0.split(1, dim = len(xywh0.size())-1)
+        x1, y1, w1, h1 = xywh1.split(1, dim = len(xywh0.size())-1)
 
-    x0_, y0_ = x0+w0, y0+h0
-    x1_, y1_ = x1+w1, y1+h1
-    
-    U_x, U_y, U_x_, U_y_ =  torch.max(x0, x1),   \
-                            torch.max(y0, y1),   \
-                            torch.min(x0_, x1_), \
-                            torch.min(y0_, y1_)
+        x0_, y0_ = x0+w0, y0+h0
+        x1_, y1_ = x1+w1, y1+h1
+        
+        U_x, U_y, U_x_, U_y_ =  torch.max(x0, x1),   \
+                                torch.max(y0, y1),   \
+                                torch.min(x0_, x1_), \
+                                torch.min(y0_, y1_)
 
-    inter_area = (U_x_-U_x).clamp(min=0.) * (U_y_-U_y).clamp(min=0.)
-    union_area = w0*h0 + w1*h1 - inter_area
+        inter_area = (U_x_-U_x).clamp(min=0.) * (U_y_-U_y).clamp(min=0.)
+        union_area = w0*h0 + w1*h1 - inter_area
 
-    return (inter_area / union_area).squeeze(-1)
-
-
-if __name__ == "__main__":
-    testbbox = torch.Tensor([[0., 0., 1., 1.], [0., 0., 1., 1.2], [0., 0., 1.2, 1.], [1., 1., 1., 1.]])
-    testscore = torch.Tensor([0.5, 0.7, 0.6, 0.4])
-    print(nms(testbbox, testscore, 0.5))
-
-
+        return (inter_area / union_area).squeeze(-1)
