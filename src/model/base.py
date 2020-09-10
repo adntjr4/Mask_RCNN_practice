@@ -16,27 +16,61 @@ class BaseModel(nn.Module):
 
         self._build_backbone()
         self._build_RPN()
+        self._set_criterion()
 
     def _build_backbone(self):
         if 'FPN' in self.conf_backbone:
-            self.backbone_model = FPN(self.conf_backbone)
+            self.backbone = FPN(self.conf_backbone)
         else:
-            self.backbone_model = BackBone(self.conf_backbone)
+            self.backbone = BackBone(self.conf_backbone)
 
     def _build_RPN(self):
         input_size = self.conf_backbone['input_size']
         self.RPN = RPN( 'FPN' in self.conf_backbone,
-                        self.backbone_model.get_feature_channel(), 
-                        self.backbone_model.get_feature_size(input_size),
+                        self.backbone.get_feature_channel(), 
+                        self.backbone.get_feature_size(input_size),
                         self.conf_RPN)
+
+    def _set_criterion(self):
+        # RPN losses (cls_loss, reg_loss)
+        self.rpn_cls_criterion = nn.BCELoss() # log loss
+        self.rpn_box_criterion = nn.SmoothL1Loss() # robust loss
+
+        # and something more...
 
     def forward(self, img):
         model_out = dict()
 
-        feature_map = self.backbone_model(img)
+        feature_map = self.backbone(img)
 
         RPN_out = self.RPN(feature_map)
         model_out.update(RPN_out)
 
-
         return model_out
+
+    def get_losses(self, data):
+        # forward
+        model_out = self.forward(data['img'])
+
+        # get losses
+        losses = {}
+
+        # [RPN] anchor labeling
+        anchor_info = self.RPN.get_anchor_label(data['bbox'], model_out['rpn_cls_score'], model_out['rpn_bbox_pred'])
+
+        # [RPN] class loss
+        if self.loss_switch['rpn_cls']:
+            selected_cls_out, label = self.RPN.get_cls_output_target(anchor_info['cls_score'], anchor_info['anchor_label'])
+            losses['rpn_cls_loss'] = self.rpn_cls_criterion(selected_cls_out, label)
+
+        # [RPN] bbox regression loss
+        if self.loss_switch['rpn_box']:
+            predicted_t, calculated_t = self.RPN.get_box_output_target(data['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
+            losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t)
+
+        return losses
+
+    def get_parameters(self):
+        return  list(self.backbone.parameters()) + \
+                list(self.RPN.parameters())
+

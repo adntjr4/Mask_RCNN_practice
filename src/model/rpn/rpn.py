@@ -36,9 +36,11 @@ class RPN(nn.Module):
         self.neg_thres = conf_RPN['negative_threshold']
         self.reg_weight = conf_RPN['regression_weight']
         self.nms_thres = conf_RPN['nms_threshold']
+        self.sample_number = conf_RPN['RPN_sample_number']
         self.k = conf_RPN['pre_nms_top_k']
         self.N = conf_RPN['proposal_N']
         self.proposal_thres = conf_RPN['proposal_threshold']
+        
 
         self.feature_size = feature_size
         self.image_size = conf_RPN['input_size']
@@ -102,8 +104,8 @@ class RPN(nn.Module):
 
         return anchor_info
 
-    def get_cls_output_target(self, cls_score, anchor_label, sample_number):
-        return training_anchor_selection_per_batch(cls_score, anchor_label, sample_number)
+    def get_cls_output_target(self, cls_score, anchor_label):
+        return training_anchor_selection_per_batch(cls_score, anchor_label, self.sample_number)
 
     def get_box_output_target(self, gt_bbox, origin_anchors, bbox_pred, anchor_label, closest_gt):
         return training_bbox_regression_calculation(gt_bbox, origin_anchors, bbox_pred, anchor_label, closest_gt, self.reg_weight)

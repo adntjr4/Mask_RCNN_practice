@@ -1,7 +1,7 @@
 
 import cv2
 
-from src.util.util import img_process, draw_boxes
+from .util import img_process, draw_boxes
 
 def debug_draw_bbox(bbox, name):
     img_dir = 'data/coco/val2017/000000397133.jpg'

@@ -13,6 +13,7 @@ model:
     negative_threshold: 0.3
     regression_weight: [1., 1., 1., 1.]
     nms_threshold: 0.7
+    RPN_sample_number: 256
 
     pre_nms_top_k: 6000
     proposal_N: 600
