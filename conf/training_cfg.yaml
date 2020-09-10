@@ -10,7 +10,7 @@ data_loader:
   test_data: test2017
 
   input_size: [1024, 1024]
-  batch_size: 2
+  batch_size: 8
   num_workers: 4
 
 train:

@@ -59,7 +59,7 @@ class DataSet(data.Dataset):
         raise NotImplementedError
 
     def __len__(self):
-        return 50
+        return 120
         #return len(self.img_id_list)
 
 def batch_collate(samples):

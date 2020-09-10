@@ -4,19 +4,14 @@ from os import path
 import torch
 from torch import nn
 from torch import optim
-from torch.nn.parallel.data_parallel import DataParallel
+from torch.nn import DataParallel
 
 
 class Trainer:
-    def __init__(self, model, data_loader, config, loss_switch=None):
+    def __init__(self, model, data_loader, config):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
 
-        if loss_switch is None:
-            self.loss_switch = {'rpn_cls':True, 'rpn_box':True}
-        else:
-            self.loss_switch = loss_switch
-
-        self.model = DataParallel(model).cuda()
+        self.model = DataParallel(model).to(self.device)
         self.data_loader = data_loader
         self.config = config
 
@@ -24,8 +19,8 @@ class Trainer:
         self.max_epoch = self.config['train']['max_epoch']
 
         self.loss_weight = {}
-        self.loss_weight['rpn_cls_loss'] = self.config['train']['RPN_cls_loss_weight']
-        self.loss_weight['rpn_box_loss'] = self.config['train']['RPN_box_loss_weight']
+        self.loss_weight['rpn_cls_loss'] = float(self.config['train']['RPN_cls_loss_weight'])
+        self.loss_weight['rpn_box_loss'] = float(self.config['train']['RPN_box_loss_weight'])
         
     def train(self):
         self.model.train()
@@ -57,11 +52,12 @@ class Trainer:
             cuda_data = {k: v.cuda() for k, v in data.items()}
 
             # get losses (return dict)
-            losses = self.model.module.get_losses(cuda_data)
+            losses = self.model(cuda_data, mode='train')
+            losses = {k:losses[k].mean() for k in losses}
 
             # loss weight
             for loss_key in losses:
-                losses *= self.loss_weight[loss_key]
+                losses[loss_key] *= self.loss_weight[loss_key]
 
             # backward
             self.optimizer.zero_grad()
