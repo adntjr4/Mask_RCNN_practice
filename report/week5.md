@@ -82,14 +82,14 @@ smooth_L1_loss은 loss의 최소값이 -0.5인데 어떻게 해야하는가.
 ## TODO
 
 - 이번 주까지 목표
-    - [x] config file 구조 수정하기
-    - [x] trainer에 기능 on/off 넣기
+    - [ ] human detection precision 뽑아내기
 
-    - [x] rpn process 재정립
-        - [x] rpn box regression loss 수정
-    - [x] basemodel 테스트
-    - [x] rpn for human dectection
-    - [x] multiGPU setting
+    - [ ] RoIPooling 추가
+    - [ ] classification network (box head)
+
+    - [ ] Timer, logger 만들기
+    - [ ] evaluation 함수 만들기
+    - [ ] human detection AP 구하기 (coco api)
 
     - [ ] opencv affine transformation 만들기
 
@@ -97,12 +97,6 @@ smooth_L1_loss은 loss의 최소값이 -0.5인데 어떻게 해야하는가.
     - [ ] classification network (box head)
 
 - 다음 주까지 목표
-    - [ ] Timer, logger 만들기
-    - [ ] evaluation 함수 만들기
-    - [ ] human detection AP 구하기
-
-    - [ ] RoIPooling 추가
-    - [ ] classification network (box head)
 
 ---
 
