@@ -262,6 +262,7 @@ def anchor_labeling_per_batch(anchor, keep, gt_bbox, pos_thres, neg_thres):
     closest_label = one_hot_indices.any(1) # [B, A]
     anchor_pos_label += closest_label
 
+    # only survived anchors can be labeled  
     anchor_pos_label = torch.logical_and(anchor_pos_label, keep)
     anchor_neg_label = torch.logical_and(anchor_neg_label, keep)
 
@@ -278,6 +279,20 @@ def anchor_labeling_per_batch(anchor, keep, gt_bbox, pos_thres, neg_thres):
 
     return anchor_label, closest_gt
 
+def anchor_labeling_no_gt(anchor, keep):
+    '''
+    labeling neutral, negative anchor per batch when if there is no gt
+    Args:
+        anchor (Tensor) : [B, A, 4]
+        keep (Tensor) : [B, A]
+    Returns:
+        anchor_label (Tensor) : [B, A] (1, 0, -1)
+        closest_gt (Tensor) : [P, 2] (0 ~ B-1), (0 ~ N-1)
+    '''
+    anchor_label = keep * -1.0
+    closest_gt = keep.new_zeros(0,2)
+    return anchor_label, closest_gt
+    
 def training_anchor_selection_per_batch(cls_score, anchor_label, sampling_number):
     '''
     random anchor sampling for training
@@ -333,11 +348,8 @@ def training_bbox_regression_calculation(gt_bbox, origin_anchors, bbox_pred, anc
     '''
     # calculate target regression parameter
     positive_anchors = origin_anchors[anchor_label>0.1] # [P, 4]
-    if closest_gt.size()[0] != 0:
-        positive_gt = torch.stack([gt_bbox[batch_num][gt_num] for batch_num, gt_num in closest_gt]) # [P, 4]
-        calculated_t = calculate_regression_parameter(positive_anchors, positive_gt, reg_weight) # [P, 4]
-    else:
-        calculated_t = closest_gt.new_zeros((0,2))
+    positive_gt = torch.stack([gt_bbox[batch_num][gt_num] for batch_num, gt_num in closest_gt]) # [P, 4]
+    calculated_t = calculate_regression_parameter(positive_anchors, positive_gt, reg_weight) # [P, 4]
 
     # reshape output regression prediction
     predicted_t = bbox_pred[anchor_label>0.1] # [P, 4]

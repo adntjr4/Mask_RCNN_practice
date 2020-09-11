@@ -11,12 +11,14 @@ from src.util.util import img_process, resize_xywh
 
 
 class DataSet(data.Dataset):
-    def __init__(self, config, mode='test'):
+    def __init__(self, config, mode='test', human_only=False):
 
         assert mode in ['train', 'val', 'test']
 
         self.config = config
         self.mode = mode
+        self.human_only = human_only
+
         self.data_dir = self.config['data_dir']
         self.data_type = '%s2017'%mode
         self.json_dir = self.data_dir + '/' + self.config['%s_instance'%mode]
@@ -36,14 +38,18 @@ class DataSet(data.Dataset):
         '''
         # open image
         img_object = self.coco.loadImgs(self.img_id_list[index])[0]
-        img = cv2.imread('%s/%s/%s'%(self.data_dir, self.data_type, img_object['file_name']))
         img = cv2.imread(path.join(self.data_dir, self.data_type, img_object['file_name']))
         
         img_tensor, resize_img_size = img_process(img, self.input_size)
 
         # parse image annotation
         img_size = torch.Tensor([img_object['height'], img_object['width']])
-        anns = self.coco.loadAnns(self.coco.getAnnIds(imgIds=self.img_id_list[index]))
+        if self.human_only:
+            cat_ids = self.coco.getCatIds(catNms=['person'])
+            ann_ids = self.coco.getAnnIds(imgIds=self.img_id_list[index], catIds=cat_ids)
+        else:
+            ann_ids = self.coco.getAnnIds(imgIds=self.img_id_list[index])
+        anns = self.coco.loadAnns(ann_ids)
 
         label, bbox = list(), list()
         for ann in anns:
@@ -52,15 +58,14 @@ class DataSet(data.Dataset):
         bbox = resize_xywh(bbox, (img_object['height'], img_object['width']), resize_img_size)
 
         item = {'img': img_tensor, 'img_size': img_size, 'label': torch.Tensor(label), 'bbox': torch.Tensor(bbox).view(-1, 4)}
-        
+
         return item
 
     def get_original_img(self, index):
         raise NotImplementedError
 
     def __len__(self):
-        return 120
-        #return len(self.img_id_list)
+        return len(self.img_id_list)
 
 def batch_collate(samples):
     '''

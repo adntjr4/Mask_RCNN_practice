@@ -17,7 +17,7 @@ train:
   top_k: 12000
   RPN_cls_loss_weight: 1.
   RPN_box_loss_weight: 1.
-  max_epoch: 100
+  max_epoch: 50
   optimizer: Adam
   lr: 1.0e-4
   checkpoint_dir: data/saved/checkpoint

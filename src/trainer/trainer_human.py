@@ -7,7 +7,7 @@ from torch import optim
 from torch.nn import DataParallel
 
 
-class Trainer:
+class TrainerHuman:
     def __init__(self, model, data_loader, config):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
 
@@ -27,7 +27,7 @@ class Trainer:
 
         # load checkpoint to resume
         if self.config['resume']:
-            self.load_checkpoint(path.join(self.config['train']['checkpoint_dir'], '{}_checkpoint.pth'.format(self.config.get_model_name())))
+            self.load_checkpoint(path.join(self.config['train']['checkpoint_dir'], '{}_human_checkpoint.pth'.format(self.config.get_model_name())))
             self.log_out('keep training from last checkpoint...')
         else:
             self._set_optimizer()
@@ -40,7 +40,7 @@ class Trainer:
             self.train_1epoch()
 
             # after training  epoch
-            #self.save_checkpoint()
+            self.save_checkpoint()
 
         self.log_out('saving...')
         self.save_checkpoint()
@@ -76,7 +76,7 @@ class Trainer:
         torch.save({'epoch': self.epoch+1,
                     'model_weight': self.model.module.state_dict(),
                     'optimizer': self.optimizer},
-                    '%s/%s_checkpoint.pth'%(checkpoint_dir, checkpoint_name))
+                    '%s/%s_human_checkpoint.pth'%(checkpoint_dir, checkpoint_name))
 
     def load_checkpoint(self, file_name):
         saved_checkpoint = torch.load(file_name)

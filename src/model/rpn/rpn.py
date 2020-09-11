@@ -7,6 +7,7 @@ from src.model.anchor_func import ( generate_anchor_form,
                                     box_regression, 
                                     anchor_preprocessing,
                                     anchor_labeling_per_batch,
+                                    anchor_labeling_no_gt,
                                     training_anchor_selection_per_batch,
                                     training_bbox_regression_calculation,
                                     reshape_output,
@@ -100,7 +101,11 @@ class RPN(nn.Module):
         anchor_info['cls_score'] = p_cls
         anchor_info['bbox_pred'] = p_bbox
         anchor_info['keep_map'] = p_keep
-        anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_per_batch(anchor_info['anchors'], anchor_info['keep_map'], gt_bbox, self.pos_thres, self.neg_thres)
+
+        if gt_bbox.size()[1] != 0: # number of gt [N] > 0
+            anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_per_batch(anchor_info['anchors'], anchor_info['keep_map'], gt_bbox, self.pos_thres, self.neg_thres)
+        else:
+            anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_no_gt(anchor_info['anchors'], anchor_info['keep_map'])
 
         return anchor_info
 

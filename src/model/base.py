@@ -60,19 +60,15 @@ class BaseModel(nn.Module):
 
             # [RPN] bbox regression loss
             if loss_switch['rpn_box']:
-                predicted_t, calculated_t = self.RPN.get_box_output_target(data['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
-                losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t)
+                if anchor_info['closest_gt'].size()[0] != 0:
+                    predicted_t, calculated_t = self.RPN.get_box_output_target(data['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
+                    losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t)
+                else:
+                    losses['rpn_box_loss'] = torch.tensor(0.).cuda()
 
             return losses
         else:
             return model_out
-
-
-    def get_losses(self, data, loss_switch=None):
-        # forward
-        model_out = self.forward(data['img'])
-
-        
 
     def get_parameters(self):
         return  list(self.backbone.parameters()) + \
