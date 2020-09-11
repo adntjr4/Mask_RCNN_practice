@@ -64,7 +64,8 @@ class BaseModel(nn.Module):
                     predicted_t, calculated_t = self.RPN.get_box_output_target(data['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
                     losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t)
                 else:
-                    losses['rpn_box_loss'] = torch.tensor(0.).cuda()
+                    #losses['rpn_box_loss'] = torch.tensor(0.).cuda()
+                    losses['rpn_box_loss'] = data['bbox'].new_zeros(())
 
             return losses
         else:

@@ -81,7 +81,7 @@ class Trainer:
     def load_checkpoint(self, file_name):
         saved_checkpoint = torch.load(file_name)
         self.epoch = saved_checkpoint['epoch']
-        self.model.load_state_dict(saved_checkpoint['model_weight'])
+        self.model.module.load_state_dict(saved_checkpoint['model_weight'])
         self.optimizer = saved_checkpoint['optimizer']
 
     def _set_optimizer(self):
