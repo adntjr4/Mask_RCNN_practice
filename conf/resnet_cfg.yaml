@@ -9,12 +9,12 @@ model:
     positive_threshold: 0.7
     negative_threshold: 0.3
     regression_weight: [1., 1., 1., 1.]
-    nms_threshold: 0.7
+    nms_threshold: 0.5
     RPN_sample_number: 256
 
     pre_nms_top_k: 60000
     proposal_N: 6000
-    proposal_threshold: 0.5
+    proposal_threshold: 0.85
 
 _TRAIN_: ./training_cfg.yaml
   

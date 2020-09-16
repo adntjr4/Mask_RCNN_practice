@@ -8,12 +8,11 @@ from torch.nn import DataParallel
 
 
 class Trainer:
-    def __init__(self, model, data_loader, config):
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
-
-        self.model = DataParallel(model).to(self.device)
+    def __init__(self, model, data_loader, config, human_only=False):
+        self.model = DataParallel(model).cuda()
         self.data_loader = data_loader
         self.config = config
+        self.human_only = human_only
 
         self.epoch = self.start_epoch = 0
         self.max_epoch = self.config['train']['max_epoch']
@@ -21,13 +20,18 @@ class Trainer:
         self.loss_weight = {}
         self.loss_weight['rpn_cls_loss'] = float(self.config['train']['RPN_cls_loss_weight'])
         self.loss_weight['rpn_box_loss'] = float(self.config['train']['RPN_box_loss_weight'])
+
+        self.checkpoint_name = self.config.get_model_name()
+        if self.human_only:
+            self.checkpoint_name += '_human'
+        self.checkpoint_name += '_checkpoint.pth'
         
     def train(self):
         self.model.train()
 
         # load checkpoint to resume
         if self.config['resume']:
-            self.load_checkpoint(path.join(self.config['train']['checkpoint_dir'], '{}_checkpoint.pth'.format(self.config.get_model_name())))
+            self.load_checkpoint(path.join(self.config['train']['checkpoint_dir'], self.checkpoint_name))
             self.log_out('keep training from last checkpoint...')
         else:
             self._set_optimizer()
@@ -40,7 +44,7 @@ class Trainer:
             self.train_1epoch()
 
             # after training  epoch
-            #self.save_checkpoint()
+            self.save_checkpoint()
 
         self.log_out('saving...')
         self.save_checkpoint()
@@ -48,7 +52,10 @@ class Trainer:
     def train_1epoch(self):
         for idx, data in enumerate(self.data_loader):
             # to device
-            cuda_data = {k: v.cuda() for k, v in data.items()}
+            cuda_data = {}
+            for k, v in data.items():
+                if isinstance(v, torch.Tensor):
+                    cuda_data[k] = v.cuda()
 
             # get losses (return dict)
             losses = self.model(cuda_data, mode='train')
@@ -65,18 +72,16 @@ class Trainer:
             self.optimizer.step()
 
             # print loss
-            loss_out_str = '[epoch %03d] %04d/%04d : '%(self.epoch+1, idx+1, len(self.data_loader)) 
+            loss_out_str = '[epoch %03d] %05d/%05d : '%(self.epoch+1, idx+1, len(self.data_loader)) 
             for loss_name in losses:
                 loss_out_str += '%s : %.4f / '%(loss_name, losses[loss_name])
             self.log_out(loss_out_str)
 
     def save_checkpoint(self):
-        checkpoint_dir = self.config['train']['checkpoint_dir']
-        checkpoint_name = self.config.get_model_name()
         torch.save({'epoch': self.epoch+1,
                     'model_weight': self.model.module.state_dict(),
                     'optimizer': self.optimizer},
-                    '%s/%s_checkpoint.pth'%(checkpoint_dir, checkpoint_name))
+                    path.join(self.config['train']['checkpoint_dir'], self.checkpoint_name))
 
     def load_checkpoint(self, file_name):
         saved_checkpoint = torch.load(file_name)

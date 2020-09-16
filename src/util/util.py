@@ -18,6 +18,9 @@ def draw_boxes(img, boxes, color=(0,255,0)):
         boxes = boxes.cpu()
         boxes = boxes.tolist()
 
+    if type(boxes) == np.array:
+        boxes = boxes.tolist()
+
     for box in boxes:
         x, y, w, h = box
         pt1 = (int(x), int(y))
@@ -26,19 +29,30 @@ def draw_boxes(img, boxes, color=(0,255,0)):
 
     return img
 
-def resize_xywh(xywh, input_size, target_size):
-    x_ratio = target_size[1] / input_size[1]
-    y_ratio = target_size[0] / input_size[0]
+def transform_xywh(xywh, trans):
+    '''
+    Args:
+        xywh (list) : [N, 4]
+        trans : affine transformation matrix
+    Returns:
+        tranformed_xywh (np.array) : [N, 4]
+    '''
+    if len(xywh) != 0:
+        xywh = np.array(xywh).transpose(1,0)
+        xy, wh = xywh[0:2,:], xywh[2:4,:]
 
-    after = []
-    for before in xywh:
-        x,y,w,h = before
-        x *= x_ratio
-        y *= y_ratio
-        w *= x_ratio
-        h *= y_ratio
-        after.append([x,y,w,h])
-    return after
+        ones = np.ones((1, xy.shape[1]))
+
+        xy0 = np.dot(trans, np.concatenate((xy, ones))).transpose(1,0)
+        xy1 = np.dot(trans, np.concatenate((xy+wh, ones))).transpose(1,0)
+
+        max_xy = np.max(np.stack((xy0, xy1)), axis=0)
+        min_xy = np.min(np.stack((xy0, xy1)), axis=0)
+
+        transformed_wh = max_xy - min_xy
+
+        return np.concatenate((min_xy, transformed_wh), axis=1)
+    return np.zeros((0, 4))
 
 def img_process(img, resize):
     '''
@@ -48,29 +62,48 @@ def img_process(img, resize):
         resize (tuple) : height, width
     Returns:
         padded_img (Tensor) : [C, H, W]
-        size (Tensor) : [2] 
+        size (Tensor) : [2]
+        transformation_matrix
     '''
     h, w, _ = img.shape
 
     if h > w:
-        size = (int(resize[0]*w/h), resize[0])
-        num_pad = resize[0] - int(resize[0]*w/h)
+        size = (resize[0], int(resize[0]*w/h))
     else:
-        size = (resize[0], int(resize[0]*h/w))
-        num_pad = resize[0] - int(resize[0]*h/w)
+        size = (int(resize[0]*h/w), resize[0])
 
-    resized_img = cv2.resize(img, dsize=size, interpolation=cv2.INTER_LINEAR)
+    trans, inv_trans = get_trans_matrix((h,w), size)
+    resized_img = cv2.warpAffine(img, trans, resize)
     img_tensor = torch.Tensor(resized_img.transpose(2,0,1))
 
-    if img_tensor.size()[0] > 3:
-        print('t')
+    return img_tensor, trans, inv_trans
 
-    if h > w:
-        padded_img = F.pad(img_tensor, (0,num_pad,0,0,0,0))
+def get_trans_matrix(size, dst_size, hor_flip=False):
+    '''
+    Args:
+        size (Tuple) : (h,w) of original image
+        dst_size (Tuple) : (h,w) of destination image
+        hor_flip (bool) : True when horizontal flip
+    Returns:
+        trans
+        inv_trans
+    '''
+    src = np.zeros((3,2), dtype=np.float32)
+    src[0, :] = np.array([0.,0.], dtype=np.float32)
+    src[1, :] = np.array([0, size[0]], dtype=np.float32)
+    src[2, :] = np.array([size[1], 0.], dtype=np.float32)
+
+    dst = np.zeros((3,2), dtype=np.float32)
+    if hor_flip:
+        dst[0, :] = np.array([dst_size[1], 0.], dtype=np.float32)
+        dst[1, :] = np.array([dst_size[1], dst_size[0]], dtype=np.float32)
+        dst[2, :] = np.array([0., 0.], dtype=np.float32)
     else:
-        padded_img = F.pad(img_tensor, (0,0,0,num_pad,0,0))
+        dst[0, :] = np.array([0.,0.], dtype=np.float32)
+        dst[1, :] = np.array([0, dst_size[0]], dtype=np.float32)
+        dst[2, :] = np.array([dst_size[1], 0.], dtype=np.float32)
 
-    return padded_img, torch.Tensor([size[1], size[0]])
+    return cv2.getAffineTransform(src, dst), cv2.getAffineTransform(dst, src)
 
 def IoU(xywh0:torch.Tensor, xywh1:torch.Tensor):
     '''
