@@ -135,13 +135,15 @@ class RPN(nn.Module):
             bbox_pred (Tensor) : List([B, 4*k, H, W])
             threshold (float)
         Returns:
-            RoI_bbox (Tensor) : [R, 4]
-            cls_score(Tensor) : [R, 1]
+            post_anchors   (Tensor) : [B, A, 4]
+            post_cls_score (Tensor) : [B, A, 1]
+            proposal_map   (Tensor) : [B, A]
         '''
         _, post_anchors, post_cls_score, _, keep = self.anchor_preparing(cls_score, bbox_pred)
         over_score_map = post_cls_score.squeeze(-1) > threshold
         proposal_map = torch.logical_and(over_score_map, keep)
-        return post_anchors[proposal_map], post_cls_score[proposal_map]
+
+        return post_anchors, post_cls_score, proposal_map
         
     def _get_positive_anchors(self, gt, bbox_pred):
         raise NotImplementedError

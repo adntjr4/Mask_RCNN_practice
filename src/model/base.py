@@ -69,9 +69,8 @@ class BaseModel(nn.Module):
 
             return losses
         else:
-            bboxes, scores = self.RPN.region_proposal_threshold(model_out['rpn_cls_score'], model_out['rpn_bbox_pred'], self.conf_RPN['proposal_threshold'])
-            classes = bboxes.new_ones(bboxes.size()[1]).type(torch.uint8)
-            return classes, bboxes, scores
+            anchor, cls_score, map = self.RPN.region_proposal_threshold(model_out['rpn_cls_score'], model_out['rpn_bbox_pred'], self.conf_RPN['proposal_threshold'])
+            return anchor, cls_score, map
 
     def get_parameters(self):
         return  list(self.backbone.parameters()) + \

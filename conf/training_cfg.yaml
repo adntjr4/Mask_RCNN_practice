@@ -10,14 +10,14 @@ data_loader:
   test_data: test2017
 
   input_size: [1024, 1024]
-  batch_size: 2
+  batch_size: 8
   num_workers: 4
 
 train:
   top_k: 12000
   RPN_cls_loss_weight: 1.
   RPN_box_loss_weight: 1.
-  max_epoch: 50
+  max_epoch: 12
   optimizer: Adam
   lr: 1.0e-4
   checkpoint_dir: data/saved/checkpoint

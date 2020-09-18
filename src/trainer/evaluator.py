@@ -40,44 +40,44 @@ class Evaluator():
     def detection_prediction(self):
         self.log_out('predicting...')
 
-        self.model.train()
+        self.model.eval()
 
-        for idx, data in enumerate(self.data_loader):
-            # to device
-            cuda_data = {}
-            for k, v in data.items():
-                if isinstance(v, torch.Tensor):
-                    cuda_data[k] = v.cuda()
+        with torch.no_grad():
+            for data_idx, data in enumerate(self.data_loader):
+                # to device
+                cuda_data = {}
+                for k, v in data.items():
+                    if isinstance(v, torch.Tensor):
+                        cuda_data[k] = v.cuda()
 
-            img_id = data['img_id'][0]
-            inv_trans = data['inv_trans'][0]
+                # get prediction
+                anchor, cls_score, proposal_map = self.model(cuda_data, mode='eval')
+                bboxes = [anchor[map_idx][one_map].detach().cpu() for map_idx, one_map in enumerate(proposal_map)]
+                scores = [cls_score[map_idx][one_map].detach().cpu() for map_idx, one_map in enumerate(proposal_map)]
+                
+                for img_idx, img_id in enumerate(data['img_id']):
+                    inverse_bboxes = transform_xywh(bboxes[img_idx], data['inv_trans'][img_idx])
+                    self.save_one_image_detection(img_id, inverse_bboxes, scores[img_idx])
 
-            # get prediction
-            classes, bboxes, scores = self.model(cuda_data, mode='eval')
-            classes, bboxes, scores = classes.detach().cpu(), bboxes.detach().cpu(), scores.detach().cpu()
-            inverse_bboxes = transform_xywh(bboxes, inv_trans)
-            self.save_one_image_detection(img_id, classes, inverse_bboxes, scores)
+                if (data_idx+1) % 10 == 0:
+                    self.log_out('prediction [%04d/%04d]'%(data_idx+1, self.data_loader.__len__()))
 
-            if (idx+1) % 10 == 0:
-                self.log_out('prediction [%04d/%04d]'%(idx+1, self.data_loader.__len__()))
-
-        self.log_out('end prediction.')
+            self.log_out('end prediction.')
     
     def reset_results(self):
         self.detection_results = []
 
-    def save_one_image_detection(self, image_id, category, bboxes, scores):
+    def save_one_image_detection(self, image_id, bboxes, scores):
         '''
         Args:
             image_id (int)
-            category (Tensor)
             bboxes (Tensor)
             scores (Tensor)
         '''
-        for cat, bbox, score in zip(category, bboxes, scores):
+        for bbox, score in zip(bboxes, scores):
             result = {
                 'image_id': image_id,
-                'category_id': cat.item(),
+                'category_id': 1,
                 'bbox': bbox.tolist(),
                 'score': score.item()
             }
