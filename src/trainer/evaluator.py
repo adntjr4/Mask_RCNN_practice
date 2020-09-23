@@ -9,11 +9,12 @@ from src.util.util import transform_xywh, draw_boxes
 
 
 class Evaluator():
-    def __init__(self, model, data_loader, data_set, config):
+    def __init__(self, model, data_loader, data_set, config, human_only=False):
         self.model = DataParallel(model).cuda()
         self.data_loader = data_loader
         self.data_set = data_set
         self.config = config
+        self.human_only = human_only
 
         self.result_file_dir = './data/saved/result/result.json'
 
@@ -32,7 +33,8 @@ class Evaluator():
 
         # run evaluation
         cocoEval = COCOeval(self.data_set.coco, cocoDt, iouType='bbox')
-        cocoEval.params.catIds = 1
+        cocoEval.params.catIds = self.data_set.coco.getCatIds(catNms=['person'])
+        cocoEval.params.imgIds = self.data_set.img_id_list[:self.data_set.__len__()]
         cocoEval.evaluate()
         cocoEval.accumulate()
         cocoEval.summarize()
@@ -51,13 +53,10 @@ class Evaluator():
                         cuda_data[k] = v.cuda()
 
                 # get prediction
-                anchor, cls_score, proposal_map = self.model(cuda_data, mode='eval')
-                bboxes = [anchor[map_idx][one_map].detach().cpu() for map_idx, one_map in enumerate(proposal_map)]
-                scores = [cls_score[map_idx][one_map].detach().cpu() for map_idx, one_map in enumerate(proposal_map)]
-                
-                for img_idx, img_id in enumerate(data['img_id']):
-                    inverse_bboxes = transform_xywh(bboxes[img_idx], data['inv_trans'][img_idx])
-                    self.save_one_image_detection(img_id, inverse_bboxes, scores[img_idx])
+                bboxes, scores, img_id_map = self.model(cuda_data, mode='eval')
+
+                # record prediction
+                self.save_one_image_detection(bboxes, scores, img_id_map)
 
                 if (data_idx+1) % 10 == 0:
                     self.log_out('prediction [%04d/%04d]'%(data_idx+1, self.data_loader.__len__()))
@@ -67,23 +66,45 @@ class Evaluator():
     def reset_results(self):
         self.detection_results = []
 
-    def save_one_image_detection(self, image_id, bboxes, scores):
+    def image_prediction(self):
+        self.log_out('predicting...')
+
+        self.model.eval()
+
+        with torch.no_grad():
+            for data_idx, data in enumerate(self.data_loader):
+                # to device
+                cuda_data = {}
+                for k, v in data.items():
+                    if isinstance(v, torch.Tensor):
+                        cuda_data[k] = v.cuda()
+
+                # get prediction
+                bboxes, _, _ = self.model(cuda_data, mode='eval')
+
+                # record prediction
+                img = self.data_set.get_original_img_from_id(data['img_id'].item())
+                self.image_out(img, 'test%d.jpg'%data_idx, bboxes)
+
+            self.log_out('end prediction.')
+
+    def save_one_image_detection(self, bboxes, scores, img_ids):
         '''
         Args:
-            image_id (int)
             bboxes (Tensor)
             scores (Tensor)
+            img_ids (Tensor)
         '''
-        for bbox, score in zip(bboxes, scores):
+        for bbox, score, img_id in zip(bboxes, scores, img_ids):
             result = {
-                'image_id': image_id,
+                'image_id': img_id.item(),
                 'category_id': 1,
                 'bbox': bbox.tolist(),
                 'score': score.item()
             }
             self.detection_results.append(result)
 
-    def image_out(self, img, img_name, classes, bboxes):
+    def image_out(self, img, img_name, bboxes):
         draw_img = draw_boxes(img, bboxes)
         cv2.imwrite('data/tmp/%s'%(img_name), draw_img)
 

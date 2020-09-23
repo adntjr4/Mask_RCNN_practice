@@ -15,6 +15,9 @@ class BackBone(nn.Module):
         elif self.backbone == 'R101':
             self.model = models.resnet101(pretrained=True)
 
+        for param in self.model.parameters():
+            param.requires_grad = False
+
     def forward(self, x):
         x = self.model.conv1(x)
         x = self.model.bn1(x)

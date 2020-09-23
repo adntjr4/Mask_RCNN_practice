@@ -39,11 +39,23 @@ class BaseModel(nn.Module):
         # and something more...
 
     def forward(self, data, mode):
+        '''
+        Entire model forward function.
+        Args:
+            data (dict) : input of model
+            mode (str) : 'train' or 'eval'
+        Returns (train):
+            losses
+        Returns (eval):
+            bbox (Tensor) : [sum(N), 4]
+            img_id : [sum(N)]
+        '''
         model_out = dict()
         feature_map = self.backbone(data['img'])
         RPN_out = self.RPN(feature_map)
         model_out.update(RPN_out)
 
+        # training mode (return losses)
         if mode == 'train':
             loss_switch = {'rpn_cls':True, 'rpn_box':True}
 
@@ -51,7 +63,21 @@ class BaseModel(nn.Module):
             losses = {}
 
             # [RPN] anchor labeling
-            anchor_info = self.RPN.get_anchor_label(data['bbox'], model_out['rpn_cls_score'], model_out['rpn_bbox_pred'])
+            anchor_info = self.RPN.get_anchor_label(data['bbox'], data['img_size'], model_out['rpn_cls_score'], model_out['rpn_bbox_pred'])
+
+            #### FOR DEBUGGING : POSITIVE LABEL IMAGE OUT
+            from src.util.debugger import debug_draw_bbox3_cv_img
+            img0_gt = data['bbox'][0]
+            img0_ori = self.RPN._get_positive_anchors(anchor_info['origin_anchors'][0], anchor_info['anchor_label'][0])
+            img0_anc = self.RPN._get_positive_anchors(anchor_info['anchors'][0], anchor_info['anchor_label'][0])
+
+            # img1_gt = data['bbox'][1]
+            # img1_ori = self.RPN._get_positive_anchors(anchor_info['origin_anchors'][1], anchor_info['anchor_label'][1])
+            # img1_anc = self.RPN._get_positive_anchors(anchor_info['anchors'][1], anchor_info['anchor_label'][1])
+
+            debug_draw_bbox3_cv_img(data['img'][0], img0_gt, img0_ori, img0_anc, 'img0')
+            # debug_draw_bbox3_cv_img(data['img'][1], img1_gt, img1_ori, img1_anc, 'img1')
+            #############################################
 
             # [RPN] class loss
             if loss_switch['rpn_cls']:
@@ -63,14 +89,20 @@ class BaseModel(nn.Module):
                 if anchor_info['closest_gt'].size()[0] != 0:
                     predicted_t, calculated_t = self.RPN.get_box_output_target(data['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
                     losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t)
+
+                    if losses['rpn_box_loss'].item() > 5:
+                        print(predicted_t)
+                        print(calculated_t)
+                        print('tt')
                 else:
-                    #losses['rpn_box_loss'] = torch.tensor(0.).cuda()
                     losses['rpn_box_loss'] = data['bbox'].new_zeros(())
 
             return losses
+
+        # evaluation mode (return bboxes, scores ...)
         else:
-            anchor, cls_score, map = self.RPN.region_proposal_threshold(model_out['rpn_cls_score'], model_out['rpn_bbox_pred'], self.conf_RPN['proposal_threshold'])
-            return anchor, cls_score, map
+            bboxes, scores, img_id_map = self.RPN.region_proposal_threshold(data['img_size'], model_out['rpn_cls_score'], model_out['rpn_bbox_pred'], data['img_id'], data['inv_trans'], self.conf_RPN['proposal_threshold'])
+            return bboxes, scores, img_id_map
 
     def get_parameters(self):
         return  list(self.backbone.parameters()) + \

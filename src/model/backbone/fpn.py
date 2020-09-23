@@ -21,6 +21,9 @@ class FPN(nn.Module):
         elif self.backbone == 'R101':
             self.model = models.resnet101(pretrained=True)
 
+        for param in self.model.parameters():
+            param.requires_grad = False
+
         in_channel = [2048, 1024, 512, 256]
         self.lateral_conv = nn.ModuleList([nn.Conv2d(in_channel[i], self.ch_number, kernel_size=1, stride=1, padding=0) for i in range(4)])
         self.output_conv = nn.ModuleList([nn.Conv2d(self.ch_number, self.ch_number, kernel_size=3, stride=1, padding=1) for i in range(4)])

@@ -6,6 +6,9 @@ from torch import nn
 from torch import optim
 from torch.nn import DataParallel
 
+from src.util.timer import Timer
+from src.util.progress_msg import ProgressMsg
+
 
 class Trainer:
     def __init__(self, model, data_loader, config, human_only=False):
@@ -25,6 +28,10 @@ class Trainer:
         if self.human_only:
             self.checkpoint_name += '_human'
         self.checkpoint_name += '_checkpoint.pth'
+
+        self.timer = Timer()
+
+        self.progress_msg = ProgressMsg((self.max_epoch, len(self.data_loader)))
         
     def train(self):
         self.model.train()
@@ -36,6 +43,8 @@ class Trainer:
         else:
             self._set_optimizer()
 
+        self.progress_msg.start((self.epoch, 0))
+
         # training
         for self.epoch in range(self.epoch, self.max_epoch):
             # before training 1 epoch
@@ -45,12 +54,19 @@ class Trainer:
 
             # after training  epoch
             self.save_checkpoint()
+        self.progress_msg.print_finish_msg()
 
-        self.log_out('saving...')
+        self.log_out('saving model...')
         self.save_checkpoint()
 
     def train_1epoch(self):
+
+        #self.timer.data_load_start()
+        log_out_iter = 1
+
+        avg_loss = {'rpn_cls_loss':0., 'rpn_box_loss':0. }
         for idx, data in enumerate(self.data_loader):
+            #self.timer.data_load_end()
             # to device
             cuda_data = {}
             for k, v in data.items():
@@ -58,8 +74,10 @@ class Trainer:
                     cuda_data[k] = v.cuda()
 
             # get losses (return dict)
+            #self.timer.model_start()
             losses = self.model(cuda_data, mode='train')
             losses = {k:losses[k].mean() for k in losses}
+            #self.timer.model_end()
 
             # loss weight
             for loss_key in losses:
@@ -72,10 +90,22 @@ class Trainer:
             self.optimizer.step()
 
             # print loss
-            loss_out_str = '[epoch %03d] %05d/%05d : '%(self.epoch+1, idx+1, len(self.data_loader)) 
             for loss_name in losses:
-                loss_out_str += '%s : %.4f / '%(loss_name, losses[loss_name])
-            self.log_out(loss_out_str)
+                avg_loss[loss_name] += losses[loss_name].item()
+
+
+            if (idx+1) % log_out_iter == 0:
+                loss_out_str = '[epoch %03d] %05d/%05d : '%(self.epoch+1, idx+1, len(self.data_loader)) 
+                #loss_out_str += '(data:%.02fs, model:%.02fs), '%(self.timer.data_load_time, self.timer.model_time)
+                for loss_name in avg_loss:
+                    loss_out_str += '%s : %.4f / '%(loss_name, avg_loss[loss_name]/log_out_iter)
+                    avg_loss[loss_name] = 0.
+                self.progress_msg.line_reset()
+                self.log_out(loss_out_str)
+
+            self.progress_msg.print_prog_msg((self.epoch, idx))
+
+            #self.timer.data_load_start()
 
     def save_checkpoint(self):
         torch.save({'epoch': self.epoch+1,
@@ -97,7 +127,11 @@ class Trainer:
         lr = self.config['train']['lr']
         
         # optimizer select
-        self.optimizer = optim.Adam(param, lr, betas=(0.5, 0.999))
+        optimizer = self.config['train']['optimizer']
+        if optimizer == 'Adam':
+            self.optimizer = optim.Adam(param, lr, betas=(0.5, 0.999))
+        elif optimizer == 'SGD':
+            self.optimizer = optim.SGD(param, lr, momentum=0.9, weight_decay=1e-4)
 
     def log_out(self, message):
         print(message)

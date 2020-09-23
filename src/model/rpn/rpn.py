@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
@@ -12,6 +13,7 @@ from src.model.anchor_func import ( generate_anchor_form,
                                     training_bbox_regression_calculation,
                                     reshape_output,
                                     nms )
+from src.util.util import transform_xywh
 
 class RPN(nn.Module):
     '''
@@ -39,7 +41,6 @@ class RPN(nn.Module):
         self.nms_thres = conf_RPN['nms_threshold']
         self.sample_number = conf_RPN['RPN_sample_number']
         self.k = conf_RPN['pre_nms_top_k']
-        self.N = conf_RPN['proposal_N']
         self.proposal_thres = conf_RPN['proposal_threshold']
         
 
@@ -61,9 +62,10 @@ class RPN(nn.Module):
         #rpn_out['rpn_RoI'] = self.region_proposal_threshold(rpn_out['rpn_cls_score'], rpn_out['rpn_bbox_pred'], self.proposal_thres)
         return rpn_out
 
-    def anchor_preparing(self, cls_score, bbox_pred):
+    def anchor_preparing(self, image_size, cls_score, bbox_pred):
         '''
         Args:
+            image_size (Tensor) : [B, 2]
             cls_score (List) : List([B, 1*k, H, W])
             bbox_pred (List) : List([B, 4*k, H, W])
         Returns:
@@ -82,18 +84,19 @@ class RPN(nn.Module):
             #anchor_list.append(getattr(self, 'default_anchor_bbox%d'%idx).detach().view(-1,4).repeat(batch_size,1,1)) # [B, A, 4]
 
         # anchor preprocessing (top_k, bbox regression, nms etc.)
-        return anchor_preprocessing(anchor_list, cls_score, bbox_pred, self.k, self.reg_weight, self.nms_thres)
+        return anchor_preprocessing(anchor_list, image_size, cls_score, bbox_pred, self.k, self.reg_weight, self.nms_thres)
 
-    def get_anchor_label(self, gt_bbox, cls_score, bbox_pred):
+    def get_anchor_label(self, gt_bbox, image_size, cls_score, bbox_pred):
         '''
         Args:
             gt_bbox (Tensor) : [B, N, 4]
+            image_size (Tensor) : [B, 2]
             cls_score (List) : List([B, 1*k, H, W])
             bbox_pred (List) : List([B, 4*k, H, W])
         Returns:
             anchor_info (Dict)
         '''
-        o_anc, p_anc, p_cls, p_bbox, p_keep = self.anchor_preparing(cls_score, bbox_pred)
+        o_anc, p_anc, p_cls, p_bbox, p_keep = self.anchor_preparing(image_size, cls_score, bbox_pred)
 
         anchor_info = dict()
         anchor_info['origin_anchors'] = o_anc
@@ -127,24 +130,38 @@ class RPN(nn.Module):
         '''
         raise NotImplementedError
 
-    def region_proposal_threshold(self, cls_score, bbox_pred, threshold):
+    def region_proposal_threshold(self, image_size, cls_score, bbox_pred, img_id, inv_trans, threshold):
         '''
         propose RoIs using score thresholding
         Args:
+            image_size (Tensor) : [B, 2]
             cls_score (Tensor) : List([B, 1*k, H, W])
             bbox_pred (Tensor) : List([B, 4*k, H, W])
+            img_id (Tensor) : [B]
+            inv_trans (Tensor) : [B, 2, 3]
             threshold (float)
         Returns:
-            post_anchors   (Tensor) : [B, A, 4]
-            post_cls_score (Tensor) : [B, A, 1]
-            proposal_map   (Tensor) : [B, A]
+            bboxes (Tensor) : [N, 4]
+            scores (Tensor) : [N, 1]
+            img_id_map (Tensor) : [N]
         '''
-        _, post_anchors, post_cls_score, _, keep = self.anchor_preparing(cls_score, bbox_pred)
+        _, post_anchors, post_cls_score, _, keep = self.anchor_preparing(image_size, cls_score, bbox_pred)
         over_score_map = post_cls_score.squeeze(-1) > threshold
         proposal_map = torch.logical_and(over_score_map, keep)
 
-        return post_anchors, post_cls_score, proposal_map
+        bboxes = []
+        for idx in range(len(img_id)):
+            transfromed_xywh = transform_xywh((post_anchors[idx][proposal_map[idx]]).cpu(), np.array(inv_trans[idx].cpu()))
+            bboxes.append(post_anchors.new(transfromed_xywh))
+        bboxes = torch.cat(bboxes)
+
+        scores = post_cls_score[proposal_map]
+
+        print(post_cls_score.max())
         
-    def _get_positive_anchors(self, gt, bbox_pred):
-        raise NotImplementedError
-        return positive_anchors
+        img_id_map = torch.cat([one_id.repeat(proposal_map[idx].sum()) for idx, one_id in enumerate(img_id)])
+
+        return bboxes, scores, img_id_map
+        
+    def _get_positive_anchors(self, anchors, label):
+        return anchors[label > 0.1]

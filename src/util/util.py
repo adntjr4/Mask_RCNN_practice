@@ -32,7 +32,7 @@ def draw_boxes(img, boxes, color=(0,255,0)):
 def transform_xywh(xywh, trans):
     '''
     Args:
-        xywh (list) : [N, 4]
+        xywh (Tensor) : [N, 4]
         trans : affine transformation matrix
     Returns:
         tranformed_xywh (np.array) : [N, 4]
@@ -64,6 +64,7 @@ def img_process(img, resize):
         padded_img (Tensor) : [C, H, W]
         size (Tensor) : [2]
         transformation_matrix
+        post_size (Tensor) : [2] (H, W)
     '''
     h, w, _ = img.shape
 
@@ -76,7 +77,7 @@ def img_process(img, resize):
     resized_img = cv2.warpAffine(img, trans, resize)
     img_tensor = torch.Tensor(resized_img.transpose(2,0,1))
 
-    return img_tensor, trans, inv_trans
+    return img_tensor, trans, inv_trans, size
 
 def get_trans_matrix(size, dst_size, hor_flip=False):
     '''
