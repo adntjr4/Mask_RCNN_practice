@@ -15,8 +15,9 @@ model:
     nms_threshold: 0.7
     RPN_sample_number: 128
 
-    pre_nms_top_k: 12000
+    pre_nms_top_k: 2000
+    post_nms_top_k: 1000
     proposal_threshold: 0.7
-    proposal_nms_threshold: 0.4
+    proposal_nms_threshold: 0.3
 
 _TRAIN_: ./training_cfg.yaml

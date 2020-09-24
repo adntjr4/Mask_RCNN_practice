@@ -91,9 +91,9 @@ class Evaluator():
     def save_one_image_detection(self, bboxes, scores, img_ids):
         '''
         Args:
-            bboxes (Tensor)
-            scores (Tensor)
-            img_ids (Tensor)
+            bboxes (Tensor) : [sum(N0, 4]
+            scores (Tensor) : [sum(N)]
+            img_ids (Tensor) : [sum(N)]
         '''
         for bbox, score, img_id in zip(bboxes, scores, img_ids):
             result = {
@@ -102,6 +102,8 @@ class Evaluator():
                 'bbox': bbox.tolist(),
                 'score': score.item()
             }
+            #img = self.data_set.get_original_img_from_id(img_id.item())
+            #self.image_out(img, 'aaaaaa.jpg', [bbox])
             self.detection_results.append(result)
 
     def image_out(self, img, img_name, bboxes):

@@ -62,7 +62,7 @@ class Trainer:
     def train_1epoch(self):
 
         #self.timer.data_load_start()
-        log_out_iter = 1
+        log_out_iter = 10
 
         avg_loss = {'rpn_cls_loss':0., 'rpn_box_loss':0. }
         for idx, data in enumerate(self.data_loader):

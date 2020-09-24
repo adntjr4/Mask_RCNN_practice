@@ -66,16 +66,16 @@ class BaseModel(nn.Module):
             anchor_info = self.RPN.get_anchor_label(data['bbox'], data['img_size'], model_out['rpn_cls_score'], model_out['rpn_bbox_pred'])
 
             #### FOR DEBUGGING : POSITIVE LABEL IMAGE OUT
-            from src.util.debugger import debug_draw_bbox3_cv_img
-            img0_gt = data['bbox'][0]
-            img0_ori = self.RPN._get_positive_anchors(anchor_info['origin_anchors'][0], anchor_info['anchor_label'][0])
-            img0_anc = self.RPN._get_positive_anchors(anchor_info['anchors'][0], anchor_info['anchor_label'][0])
+            # from src.util.debugger import debug_draw_bbox3_cv_img
+            # img0_gt = data['bbox'][0]
+            # img0_ori = self.RPN._get_positive_anchors(anchor_info['origin_anchors'][0], anchor_info['anchor_label'][0])
+            # img0_anc = self.RPN._get_positive_anchors(anchor_info['anchors'][0], anchor_info['anchor_label'][0])
 
             # img1_gt = data['bbox'][1]
             # img1_ori = self.RPN._get_positive_anchors(anchor_info['origin_anchors'][1], anchor_info['anchor_label'][1])
             # img1_anc = self.RPN._get_positive_anchors(anchor_info['anchors'][1], anchor_info['anchor_label'][1])
 
-            debug_draw_bbox3_cv_img(data['img'][0], img0_gt, img0_ori, img0_anc, 'img0')
+            # debug_draw_bbox3_cv_img(data['img'][0], img0_gt, img0_ori, img0_anc, 'img0')
             # debug_draw_bbox3_cv_img(data['img'][1], img1_gt, img1_ori, img1_anc, 'img1')
             #############################################
 
@@ -101,7 +101,14 @@ class BaseModel(nn.Module):
 
         # evaluation mode (return bboxes, scores ...)
         else:
-            bboxes, scores, img_id_map = self.RPN.region_proposal_threshold(data['img_size'], model_out['rpn_cls_score'], model_out['rpn_bbox_pred'], data['img_id'], data['inv_trans'], self.conf_RPN['proposal_threshold'])
+            bboxes, scores, img_id_map = self.RPN.region_proposal_threshold(
+                data['img_size'], 
+                model_out['rpn_cls_score'], 
+                model_out['rpn_bbox_pred'], 
+                data['img_id'], 
+                data['inv_trans'], 
+                self.conf_RPN['proposal_threshold'], 
+                self.conf_RPN['proposal_nms_threshold'])
             return bboxes, scores, img_id_map
 
     def get_parameters(self):

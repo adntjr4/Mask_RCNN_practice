@@ -16,7 +16,7 @@ data_loader:
 train:
   RPN_cls_loss_weight: 1.
   RPN_box_loss_weight: 1.
-  max_epoch: 12
+  max_epoch: 24
   optimizer: SGD
-  lr: 0.02
+  lr: 0.002
   checkpoint_dir: data/saved/checkpoint

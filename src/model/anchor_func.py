@@ -41,55 +41,68 @@ def generate_anchor_form(anchor, feature_size, image_size):
         anchor_bbox.append(torch.stack(anchor_bbox_list).cuda()) # [k, H, W, 4]
     return anchor_bbox
 
-def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, top_k, bbox_weight, nms_threshold):
+def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, post_top_k, bbox_weight, nms_thres):
     '''
     Args:
-        anchors (Tensor) : List([B, A, 4])
-        image_size (Tensor) : [B, 2]
-        cls_score (Tensor) : List([B, 1*k, H, W])
-        bbox_pred (Tensor) : List([B, 4*k, H, W])
-        top_k (int)
+        anchors     (Tensor) : List([B, A, 4])
+        image_size  (Tensor) : [B, 2]
+        cls_score   (Tensor) : List([B, 1*k, H, W])
+        bbox_pred   (Tensor) : List([B, 4*k, H, W])
+        pre_top_k   (int)    
+        post_top_k  (int)    
+        bbox_weight (Tuple)  
+        nms_thres   (float)  
     Returns:
-        origin_anchors (Tensor) : [B, A, 4]
+        post_origin_anchors (Tensor) : [B, A, 4]
         post_anchors   (Tensor) : [B, A, 4]
         post_cls_score (Tensor) : [B, A, 1]
         post_bbox_pred (Tensor) : [B, A, 4]
         post_keep_map  (Tensor) : [B, A]
     '''
     # for each feature level
-    origin_anchors, post_anchors, post_cls_score = [], [], []
-    post_bbox_pred, post_keep_map = [], []
+    origin_anchors, concat_anchors, concat_cls_score = [], [], []
+    concat_bbox_pred, concat_keep_map = [], []
     for lvl_anchors, lvl_cls_score, lvl_bbox_pred in zip(anchors, cls_score, bbox_pred):
         # reshape
         lvl_cls_score = reshape_output(lvl_cls_score, n=1)
         lvl_bbox_pred = reshape_output(lvl_bbox_pred, n=4)
 
-        # top k
-        lvl_anchors_top, lvl_cls_score_top, lvl_bbox_pred_top = top_k_per_batch(lvl_anchors, lvl_cls_score, lvl_bbox_pred, top_k)
+        # pre nms top k (per level)
+        indices = sort_per_batch(lvl_cls_score)
+        lvl_anchors_top   = top_k_from_indices(lvl_anchors,   indices, pre_top_k)
+        lvl_cls_score_top = top_k_from_indices(lvl_cls_score, indices, pre_top_k)
+        lvl_bbox_pred_top = top_k_from_indices(lvl_bbox_pred, indices, pre_top_k)
 
         # bbox regression
         lvl_moved_anchors = box_regression(lvl_anchors_top, lvl_bbox_pred_top, bbox_weight)
-        post_anchors.append(lvl_moved_anchors)
+        concat_anchors.append(lvl_moved_anchors)
 
         # NMS
-        #post_keep_map.append(nms_per_batch(lvl_moved_anchors, lvl_cls_score_top, nms_threshold))
+        concat_keep_map.append(nms_per_batch(lvl_moved_anchors, lvl_cls_score_top, nms_thres))
 
         # append
         origin_anchors.append(lvl_anchors_top)
-        post_cls_score.append(lvl_cls_score_top)
-        post_bbox_pred.append(lvl_bbox_pred_top)
+        concat_cls_score.append(lvl_cls_score_top)
+        concat_bbox_pred.append(lvl_bbox_pred_top)
 
     # concatenate all level anchors
-    origin_anchors = torch.cat(origin_anchors, dim=1)
-    post_anchors   = torch.cat(post_anchors,   dim=1)
-    post_cls_score = torch.cat(post_cls_score, dim=1)
-    post_bbox_pred = torch.cat(post_bbox_pred, dim=1)
-    #post_keep_map  = torch.cat(post_keep_map,  dim=1)
+    origin_anchors   = torch.cat(origin_anchors,   dim=1)
+    concat_anchors   = torch.cat(concat_anchors,   dim=1)
+    concat_cls_score = torch.cat(concat_cls_score, dim=1)
+    concat_bbox_pred = torch.cat(concat_bbox_pred, dim=1)
+    concat_keep_map  = torch.cat(concat_keep_map,  dim=1)
 
     # invaild bbox map
-    vaild_map = remove_invaild_bbox_per_batch(post_anchors, image_size)
+    vaild_map = remove_invaild_bbox_per_batch(concat_anchors, image_size)
+    keep = torch.logical_and(concat_keep_map, vaild_map)
 
-    post_keep_map  = nms_per_batch(post_anchors, post_cls_score, nms_threshold)
+    # post nms top k
+    indices = sort_per_batch(concat_cls_score[keep])
+    post_origin_anchors = top_k_from_indices(lvl_anchors, indices, pre_top_k)
+    post_anchors   = torch.cat(concat_anchors,   dim=1)
+    post_cls_score
+    post_bbox_pred
+
 
     return origin_anchors, post_anchors, post_cls_score, post_bbox_pred, torch.logical_and(post_keep_map, vaild_map)
 
@@ -180,28 +193,38 @@ def calculate_regression_parameter(anchor_bbox, gt_bbox, weight):
 
     return regression_parameter
 
-def top_k_per_batch(anchors, cls_score, bbox_pred, k):
+def top_k_from_indices(source, indices, k):
+    '''
+    select top k from source with indices
+    Args:
+        source  (Tensor) : [B, A, ?]
+        indices (Tensor) : [B, A]
+        k (int)
+    Returns:
+        top_k_source (Tensor) : [B, k, ?]
+    '''
+    _, _, last_dimension = source.shape()
+    repeated_indices = indices.repeat(1, 1, last_dimension)
+    return source.gather(dim=1, index=repeated_indices)[:,:k,:]
+
+def sort_per_batch(cls_score):
     '''
     select top k anchors based on objectness score per batch
     Args:
-        anchors (Tensor) : [B, A, 4]
         cls_score (Tensor) : [B, A, 1]
-        bbox_pred (Tensor) : [B, A, 4]
-        k (int)
     Returns:
-        top_k_anchors (Tensor) : [B, k, 4]   (sorted as follow cls_score)
-        top_k_cls_score (Tensor) : [B, k, 1] (sorted)
-        top_k_bbox_pred (Tensor) : [B, k, 4] (sorted as follow cls_score)
+        indices (Tensor)
     '''
-    if anchors.size()[1] > k:
-        top_k_cls_score, indices = torch.sort(cls_score, dim=1, descending=True)
-        indices = indices.repeat(1,1,4) # [B, A, 4]
-        top_k_anchors = anchors.gather(dim=1, index=indices)[:,:k,:]
-        top_k_cls_score = top_k_cls_score[:,:k,:]
-        top_k_bbox_pred = bbox_pred.gather(dim=1, index=indices)[:,:k,:]
-        return top_k_anchors, top_k_cls_score, top_k_bbox_pred
-    else:
-        return anchors, cls_score, bbox_pred
+    '''
+    top_k_cls_score, indices = torch.sort(cls_score, dim=1, descending=True)
+    indices = indices.repeat(1,1,4) # [B, A, 4]
+    top_k_anchors = anchors.gather(dim=1, index=indices)[:,:k,:]
+    top_k_cls_score = top_k_cls_score[:,:k,:]
+    top_k_bbox_pred = bbox_pred.gather(dim=1, index=indices)[:,:k,:]
+    return top_k_anchors, top_k_cls_score, top_k_bbox_pred
+    '''
+    _, indices = torch.sort(cls_score, dim=1, descending=True)
+    return indices
 
 def remove_invaild_bbox_per_batch(anchors, image_size):
     '''

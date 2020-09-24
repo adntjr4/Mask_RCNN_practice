@@ -75,8 +75,7 @@ class DataSet(data.Dataset):
         return cv2.imread(path.join(self.data_dir, self.data_type, img_object['file_name']))
 
     def __len__(self):
-        return 12
-        return len(self.img_id_list)
+        return len(self.img_id_list) - (len(self.img_id_list) % 8)
 
 def batch_collate(samples):
     '''

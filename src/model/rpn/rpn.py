@@ -12,7 +12,7 @@ from src.model.anchor_func import ( generate_anchor_form,
                                     training_anchor_selection_per_batch,
                                     training_bbox_regression_calculation,
                                     reshape_output,
-                                    nms )
+                                    nms_per_batch )
 from src.util.util import transform_xywh
 
 class RPN(nn.Module):
@@ -130,7 +130,7 @@ class RPN(nn.Module):
         '''
         raise NotImplementedError
 
-    def region_proposal_threshold(self, image_size, cls_score, bbox_pred, img_id, inv_trans, threshold):
+    def region_proposal_threshold(self, image_size, cls_score, bbox_pred, img_id, inv_trans, threshold, nms_thres):
         '''
         propose RoIs using score thresholding
         Args:
@@ -140,6 +140,7 @@ class RPN(nn.Module):
             img_id (Tensor) : [B]
             inv_trans (Tensor) : [B, 2, 3]
             threshold (float)
+            nms_thres (float) : nms threshold for detection proposal
         Returns:
             bboxes (Tensor) : [N, 4]
             scores (Tensor) : [N, 1]
@@ -149,17 +150,20 @@ class RPN(nn.Module):
         over_score_map = post_cls_score.squeeze(-1) > threshold
         proposal_map = torch.logical_and(over_score_map, keep)
 
+        # proposal nms
+        nms_keep = nms_per_batch(post_anchors, post_cls_score, nms_thres)
+
+        return_proposal_keep = torch.logical_and(proposal_map, nms_keep)
+
         bboxes = []
         for idx in range(len(img_id)):
-            transfromed_xywh = transform_xywh((post_anchors[idx][proposal_map[idx]]).cpu(), np.array(inv_trans[idx].cpu()))
+            transfromed_xywh = transform_xywh((post_anchors[idx][return_proposal_keep[idx]]).cpu(), np.array(inv_trans[idx].cpu()))
             bboxes.append(post_anchors.new(transfromed_xywh))
         bboxes = torch.cat(bboxes)
 
-        scores = post_cls_score[proposal_map]
-
-        print(post_cls_score.max())
+        scores = post_cls_score[return_proposal_keep]
         
-        img_id_map = torch.cat([one_id.repeat(proposal_map[idx].sum()) for idx, one_id in enumerate(img_id)])
+        img_id_map = torch.cat([one_id.repeat(return_proposal_keep[idx].sum()) for idx, one_id in enumerate(img_id)])
 
         return bboxes, scores, img_id_map
         
