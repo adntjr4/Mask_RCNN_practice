@@ -19,12 +19,11 @@ def main(config):
     num_workers = conf_dl['num_workers']
 
     test_data_set = DataSet(conf_dl, mode='val', human_only=True)
-    test_data_loader = DataLoader(test_data_set, batch_size=1, shuffle=False, num_workers=num_workers, collate_fn=batch_collate)
+    test_data_loader = DataLoader(test_data_set, batch_size=1, shuffle=True, num_workers=num_workers, collate_fn=batch_collate)
 
     # model
     model = BaseModel(config['model'])
     model.load_state_dict(load_model(config['weight']))
-    model.eval()
 
     # evaluator
     evaluator = Evaluator(model, test_data_loader, test_data_set, config)
@@ -43,8 +42,8 @@ if __name__ == '__main__':
 
     args.device = '0'
 
-    args.weight = 'data/saved/checkpoint/R50_human_checkpoint.pth'
-    #args.weight = 'data/saved/model/R50_human3_epoch24.pth'
+    #args.weight = 'data/saved/checkpoint/R50_human_checkpoint.pth'
+    args.weight = 'data/saved/model/R50_human3_epoch24.pth'
 
     assert args.config is not None, 'config file path is needed'
     assert args.weight is not None, 'model weight is needed for evaluation'
