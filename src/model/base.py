@@ -77,7 +77,7 @@ class BaseModel(nn.Module):
 
             # debug_draw_bbox3_cv_img(data['img'][0], img0_gt, img0_ori, img0_anc, 'img0')
             # debug_draw_bbox3_cv_img(data['img'][1], img1_gt, img1_ori, img1_anc, 'img1')
-            #############################################
+            ##### FOR DEBUGGING ##########################
 
             # [RPN] class loss
             if loss_switch['rpn_cls']:
@@ -104,6 +104,16 @@ class BaseModel(nn.Module):
                 data['inv_trans'], 
                 self.conf_RPN['proposal_threshold'], 
                 self.conf_RPN['proposal_nms_threshold'])
+            '''
+            bboxes, scores, img_id_map = self.RPN.region_proposal_top_N(
+                data['img_size'], 
+                model_out['rpn_cls_score'], 
+                model_out['rpn_bbox_pred'], 
+                data['img_id'], 
+                data['inv_trans'], 
+                100)
+            '''
+
             return bboxes, scores, img_id_map
 
     def get_parameters(self):
