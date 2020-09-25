@@ -59,7 +59,7 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
         post_bbox_pred (Tensor) : [B, A, 4]
         post_keep_map  (Tensor) : [B, A]
     '''
-    # for each feature level
+    # for each feature level do {pre-nms-top-k, nms}
     origin_anchors, concat_anchors, concat_cls_score = [], [], []
     concat_bbox_pred, concat_keep_map = [], []
     for lvl_anchors, lvl_cls_score, lvl_bbox_pred in zip(anchors, cls_score, bbox_pred):
@@ -92,19 +92,27 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
     concat_bbox_pred = torch.cat(concat_bbox_pred, dim=1)
     concat_keep_map  = torch.cat(concat_keep_map,  dim=1)
 
-    # invaild bbox map
-    vaild_map = remove_invaild_bbox_per_batch(concat_anchors, image_size)
-    keep = torch.logical_and(concat_keep_map, vaild_map)
+    # invaild bbox (box edge cliping)
+    invaild_bbox_cliping_per_batch(concat_anchors, image_size)
+    keep = concat_keep_map
 
-    # post nms top k
-    indices = sort_per_batch(concat_cls_score[keep])
-    post_origin_anchors = top_k_from_indices(lvl_anchors, indices, pre_top_k)
-    post_anchors   = torch.cat(concat_anchors,   dim=1)
-    post_cls_score
-    post_bbox_pred
+    # for each batch do {post-nms-top-k}
+    post_origin_anchors, post_anchors, post_cls_score, post_bbox_pred = [], [], [], []
+    for idx in range(concat_cls_score.size()[0]):
+        # post nms top k
+        indices = sort_per_batch(concat_cls_score[idx][keep[idx]])
+        post_origin_anchors.append(top_k_from_indices(origin_anchors[idx][keep[idx]], indices, post_top_k))
+        post_anchors.append(top_k_from_indices(concat_anchors[idx][keep[idx]], indices, post_top_k))
+        post_cls_score.append(top_k_from_indices(concat_cls_score[idx][keep[idx]], indices, post_top_k))
+        post_bbox_pred.append(top_k_from_indices(concat_bbox_pred[idx][keep[idx]], indices, post_top_k))
 
+    # stack all batch
+    post_origin_anchors = torch.stack(post_origin_anchors)
+    post_anchors = torch.stack(post_anchors)
+    post_cls_score = torch.stack(post_cls_score)
+    post_bbox_pred = torch.stack(post_bbox_pred)
 
-    return origin_anchors, post_anchors, post_cls_score, post_bbox_pred, torch.logical_and(post_keep_map, vaild_map)
+    return post_origin_anchors, post_anchors, post_cls_score, post_bbox_pred
 
 scale_clamp_max = math.log(2)
 scale_clamp_min = math.log(0.5)
@@ -197,34 +205,53 @@ def top_k_from_indices(source, indices, k):
     '''
     select top k from source with indices
     Args:
-        source  (Tensor) : [B, A, ?]
-        indices (Tensor) : [B, A]
+        source  (Tensor) : [B, A, ?] or [A, ?]
+        indices (Tensor) : [B, A] or [A]
         k (int)
     Returns:
-        top_k_source (Tensor) : [B, k, ?]
+        top_k_source (Tensor) : [B, k, ?] or [k, ?]
     '''
-    _, _, last_dimension = source.shape()
-    repeated_indices = indices.repeat(1, 1, last_dimension)
-    return source.gather(dim=1, index=repeated_indices)[:,:k,:]
+    if len(source.size()) == 3:
+        _, _, last_dimension = source.size()
+        repeated_indices = indices.repeat(1, 1, last_dimension)
+        return source.gather(dim=1, index=repeated_indices)[:,:k,:]
+    elif len(source.size()) == 2:
+        _, last_dimension = source.size()
+        repeated_indices = indices.repeat(1, last_dimension)
+        return source.gather(dim=0, index=repeated_indices)[:k,:]
 
 def sort_per_batch(cls_score):
     '''
     select top k anchors based on objectness score per batch
     Args:
-        cls_score (Tensor) : [B, A, 1]
+        cls_score (Tensor) : [B, A, 1] or [A, 1]
     Returns:
+        sorted_cls_socre (Tensor) : [B, A, 1] or [A, 1]
         indices (Tensor)
     '''
-    '''
-    top_k_cls_score, indices = torch.sort(cls_score, dim=1, descending=True)
-    indices = indices.repeat(1,1,4) # [B, A, 4]
-    top_k_anchors = anchors.gather(dim=1, index=indices)[:,:k,:]
-    top_k_cls_score = top_k_cls_score[:,:k,:]
-    top_k_bbox_pred = bbox_pred.gather(dim=1, index=indices)[:,:k,:]
-    return top_k_anchors, top_k_cls_score, top_k_bbox_pred
-    '''
-    _, indices = torch.sort(cls_score, dim=1, descending=True)
+    assert len(cls_score.size()) in [2,3]
+    _, indices = torch.sort(cls_score, dim=len(cls_score.size())-2, descending=True)
     return indices
+
+def invaild_bbox_cliping_per_batch(anchors, image_size):
+    '''
+    remove invaild bboxes per batch (e.g. outside image)
+    Args:
+        anchors (Tensor) : [B, A, 4]
+        image_size (Tensor) : [B, 2]
+    '''
+    batch_size, _ = image_size.size()
+    for batch_idx in range(batch_size):
+        H, W = image_size[batch_idx][0], image_size[batch_idx][1]
+        x,y,w,h = anchors[batch_idx].split(1, dim=1)
+        w += x
+        h += y
+        x.clamp_(min=0)
+        y.clamp_(min=0)
+        w.clamp_(max=W)
+        h.clamp_(max=H)
+        w -= x
+        h -= y
 
 def remove_invaild_bbox_per_batch(anchors, image_size):
     '''
@@ -252,7 +279,7 @@ def remove_invaild_bbox(anchors, image_size):
     '''
     x, y, w, h = anchors.split(1, dim=1)
 
-    tolerance = 20.
+    tolerance = 128.
 
     left = x >= -1 * tolerance
     up = y >= -1 * tolerance
@@ -319,12 +346,11 @@ def nms_per_batch(bbox, score, threshold):
     total_keep_map = torch.stack(total_keep_map)
     return total_keep_map
 
-def anchor_labeling_per_batch(anchor, keep, gt_bbox, pos_thres, neg_thres):
+def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres, neg_thres):
     '''
     labeling positive, neutral, negative anchor per batch
     Args:
         anchor (Tensor) : [B, A, 4]
-        keep (Tensor) : [B, A]
         gt_bbox (Tensor) : [B, N, 4]
     Returns:
         anchor_label (Tensor) : [B, A] (1, 0, -1)
@@ -345,16 +371,12 @@ def anchor_labeling_per_batch(anchor, keep, gt_bbox, pos_thres, neg_thres):
     anchor_neg_label = torch.logical_not((cross_IoU > neg_thres).any(1)) # [B, A]
 
     # find closest anchor for each gt_bbox
-    cross_IoU.permute(0,2,1)[keep.logical_not()] *= 0.
+    #cross_IoU.permute(0,2,1)[keep.logical_not()] *= 0.
     closest_indices = torch.argmax(cross_IoU, dim=2) # [B, N]
     one_hot_indices = F.one_hot(closest_indices, num_classes=anchor_num) # [B, N, A]
     one_hot_indices = (one_hot_indices * gt_bbox[:,:,2].unsqueeze(-1).repeat(1,1,anchor_num)).type(torch.bool) # [B, N, A] (for select real anchor by multiply width of gt bbox)
     closest_label = one_hot_indices.any(1) # [B, A]
     anchor_pos_label += closest_label
-
-    # only survived anchors can be labeled  
-    anchor_pos_label = torch.logical_and(anchor_pos_label, keep)
-    anchor_neg_label = torch.logical_and(anchor_neg_label, keep)
 
     # find closest gt_bbox for each anchor
     closest_gt_indices = torch.argmax(cross_IoU, dim=1) # [B, A]

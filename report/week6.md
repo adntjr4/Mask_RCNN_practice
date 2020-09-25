@@ -1,18 +1,12 @@
-# week 4
+# week 6
 
 ## 이번 주 작업
 
-### Full epoch training
+### detectron 2 code copy
 
-FPN : RPN training (6 epoch)  
--> 8GPU, 2 image per GPU, 40k iters -> 640k images -> 640k / 118k ~ 5.4 epoch  
+- 세부 알고리즘 수정
 
-FPN : Object detection training (11 epoch)  
--> 8GPU, 2 image per GPU, 80k iters -> 1280k images -> 128k / 118k ~ 10.8 epoch  
-
-### Evaluation function 작성
-
-### 성능
+### 기존
 score_threshold : 0.5, nms_threshold : 0.7  
 
 Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.036  
@@ -68,3 +62,6 @@ images | images
     - [x] human detection AP 구하기 (coco api)
 
 ---
+
+
+3 : sample 256, weight 0.1, constrain : 0.3, 2

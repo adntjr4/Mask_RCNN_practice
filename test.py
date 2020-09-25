@@ -43,7 +43,8 @@ if __name__ == '__main__':
 
     args.device = '0'
 
-    args.weight = 'data/saved/model/R50_human2_epoch12.pth'
+    args.weight = 'data/saved/checkpoint/R50_human_checkpoint.pth'
+    #args.weight = 'data/saved/model/R50_human3_epoch24.pth'
 
     assert args.config is not None, 'config file path is needed'
     assert args.weight is not None, 'model weight is needed for evaluation'

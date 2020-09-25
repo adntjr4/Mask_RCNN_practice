@@ -89,11 +89,6 @@ class BaseModel(nn.Module):
                 if anchor_info['closest_gt'].size()[0] != 0:
                     predicted_t, calculated_t = self.RPN.get_box_output_target(data['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
                     losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t)
-
-                    if losses['rpn_box_loss'].item() > 5:
-                        print(predicted_t)
-                        print(calculated_t)
-                        print('tt')
                 else:
                     losses['rpn_box_loss'] = data['bbox'].new_zeros(())
 

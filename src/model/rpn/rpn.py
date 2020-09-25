@@ -35,12 +35,13 @@ class RPN(nn.Module):
         self.rpn_head = RPNHead(FPN_mode, feature_channel, conf_RPN)
 
         # init configuration values
-        self.pos_thres = conf_RPN['positive_threshold']
-        self.neg_thres = conf_RPN['negative_threshold']
-        self.reg_weight = conf_RPN['regression_weight']
-        self.nms_thres = conf_RPN['nms_threshold']
-        self.sample_number = conf_RPN['RPN_sample_number']
-        self.k = conf_RPN['pre_nms_top_k']
+        self.pos_thres      = conf_RPN['positive_threshold']
+        self.neg_thres      = conf_RPN['negative_threshold']
+        self.reg_weight     = conf_RPN['regression_weight']
+        self.nms_thres      = conf_RPN['nms_threshold']
+        self.sample_number  = conf_RPN['RPN_sample_number']
+        self.pre_k          = conf_RPN['pre_nms_top_k']
+        self.post_k         = conf_RPN['post_nms_top_k']
         self.proposal_thres = conf_RPN['proposal_threshold']
         
 
@@ -84,7 +85,7 @@ class RPN(nn.Module):
             #anchor_list.append(getattr(self, 'default_anchor_bbox%d'%idx).detach().view(-1,4).repeat(batch_size,1,1)) # [B, A, 4]
 
         # anchor preprocessing (top_k, bbox regression, nms etc.)
-        return anchor_preprocessing(anchor_list, image_size, cls_score, bbox_pred, self.k, self.reg_weight, self.nms_thres)
+        return anchor_preprocessing(anchor_list, image_size, cls_score, bbox_pred, self.pre_k, self.post_k, self.reg_weight, self.nms_thres)
 
     def get_anchor_label(self, gt_bbox, image_size, cls_score, bbox_pred):
         '''
@@ -96,19 +97,15 @@ class RPN(nn.Module):
         Returns:
             anchor_info (Dict)
         '''
-        o_anc, p_anc, p_cls, p_bbox, p_keep = self.anchor_preparing(image_size, cls_score, bbox_pred)
+        o_anc, p_anc, p_cls, p_bbox = self.anchor_preparing(image_size, cls_score, bbox_pred)
 
         anchor_info = dict()
         anchor_info['origin_anchors'] = o_anc
         anchor_info['anchors'] = p_anc
         anchor_info['cls_score'] = p_cls
         anchor_info['bbox_pred'] = p_bbox
-        anchor_info['keep_map'] = p_keep
 
-        if gt_bbox.size()[1] != 0: # number of gt [N] > 0
-            anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_per_batch(anchor_info['anchors'], anchor_info['keep_map'], gt_bbox, self.pos_thres, self.neg_thres)
-        else:
-            anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_no_gt(anchor_info['anchors'], anchor_info['keep_map'])
+        anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_per_batch(anchor_info['anchors'], gt_bbox, self.pos_thres, self.neg_thres)
 
         return anchor_info
 
@@ -146,14 +143,13 @@ class RPN(nn.Module):
             scores (Tensor) : [N, 1]
             img_id_map (Tensor) : [N]
         '''
-        _, post_anchors, post_cls_score, _, keep = self.anchor_preparing(image_size, cls_score, bbox_pred)
+        _, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
         over_score_map = post_cls_score.squeeze(-1) > threshold
-        proposal_map = torch.logical_and(over_score_map, keep)
 
         # proposal nms
         nms_keep = nms_per_batch(post_anchors, post_cls_score, nms_thres)
 
-        return_proposal_keep = torch.logical_and(proposal_map, nms_keep)
+        return_proposal_keep = torch.logical_and(over_score_map, nms_keep)
 
         bboxes = []
         for idx in range(len(img_id)):
