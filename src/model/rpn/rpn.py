@@ -170,6 +170,10 @@ class RPN(nn.Module):
         # get anchors from cls score and bbox variables
         _, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
 
+        #######
+        print(post_cls_score.max())
+        ######
+
         # select anchors which has over threshold
         over_score_map = post_cls_score.squeeze(-1) > threshold
 

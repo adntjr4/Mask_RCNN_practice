@@ -34,7 +34,7 @@ class BaseModel(nn.Module):
     def _set_criterion(self):
         # RPN losses (cls_loss, reg_loss)
         self.rpn_cls_criterion = nn.BCELoss() # log loss
-        self.rpn_box_criterion = nn.SmoothL1Loss() # robust loss
+        self.rpn_box_criterion = nn.SmoothL1Loss(reduction='sum') # robust loss
 
         # and something more...
 
