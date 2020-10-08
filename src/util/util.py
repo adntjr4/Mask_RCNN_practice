@@ -54,6 +54,10 @@ def transform_xywh(xywh, trans):
         return np.concatenate((min_xy, transformed_wh), axis=1)
     return np.zeros((0, 4))
 
+pre_processing_tr = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize((0.485, 0.456, 0.406), (1.0, 1.0, 1.0))]) 
+
 def img_process(img, resize):
     '''
     pre-processing of image from cv image to tensor
@@ -75,7 +79,7 @@ def img_process(img, resize):
 
     trans, inv_trans = get_trans_matrix((h,w), size)
     resized_img = cv2.warpAffine(img, trans, resize)
-    img_tensor = torch.Tensor(resized_img.transpose(2,0,1))
+    img_tensor = pre_processing_tr(resized_img)
 
     return img_tensor, trans, inv_trans, size
 
