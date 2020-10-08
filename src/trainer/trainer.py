@@ -43,6 +43,9 @@ class Trainer:
         else:
             self._set_optimizer()
 
+        # schduler
+        self.scheduler = optim.lr_scheduler.StepLR(optimizer=self.optimizer, step_size=self.max_epoch*0.75, gamma=0.1)
+
         self.progress_msg.start((self.epoch, 0))
 
         # training
@@ -54,6 +57,9 @@ class Trainer:
 
             # after training  epoch
             self.save_checkpoint()
+
+            # scheduler stop
+            self.scheduler.step()
         self.progress_msg.print_finish_msg()
 
         self.log_out('saving model...')

@@ -73,6 +73,8 @@ class Evaluator():
 
         with torch.no_grad():
             for data_idx, data in enumerate(self.data_loader):
+                if data_idx >= self.config['img_num']:
+                    break
                 # to device
                 cuda_data = {}
                 for k, v in data.items():
@@ -85,6 +87,7 @@ class Evaluator():
                 # record prediction
                 img = self.data_set.get_original_img_from_id(data['img_id'].item())
                 self.image_out(img, 'test%d.jpg'%data_idx, bboxes)
+                self.log_out('%d image out'%(data_idx+1))
 
             self.log_out('end prediction.')
 

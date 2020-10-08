@@ -161,7 +161,7 @@ class RPN(nn.Module):
             img_id (Tensor) : [B]
             inv_trans (Tensor) : [B, 2, 3]
             threshold (float)
-            nms_thres (float) : nms threshold for detection proposal
+            nms_thres (float)
         Returns:
             bboxes (Tensor) : [N, 4]
             scores (Tensor) : [N, 1]
@@ -171,12 +171,12 @@ class RPN(nn.Module):
         _, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
 
         #######
-        print(post_cls_score.max())
+        # print(post_cls_score.max())
         ######
 
         # select anchors which has over threshold
         over_score_map = post_cls_score.squeeze(-1) > threshold
-
+        
         # proposal nms
         nms_keep = nms_per_batch(post_anchors, post_cls_score, nms_thres)
         return_proposal_keep = torch.logical_and(over_score_map, nms_keep)

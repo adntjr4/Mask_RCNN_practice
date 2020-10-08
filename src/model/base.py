@@ -102,8 +102,8 @@ class BaseModel(nn.Module):
                 model_out['rpn_bbox_pred'], 
                 data['img_id'], 
                 data['inv_trans'], 
-                self.conf_RPN['proposal_threshold'], 
-                self.conf_RPN['proposal_nms_threshold'])
+                self.conf_RPN['proposal_threshold'],
+                self.conf_RPN['proposla_nms_threshold'])
             '''
             bboxes, scores, img_id_map = self.RPN.region_proposal_top_N(
                 data['img_size'], 

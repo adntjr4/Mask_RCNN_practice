@@ -185,10 +185,10 @@ def calculate_regression_parameter(anchor_bbox, gt_bbox, weight):
     t_w = (g_w / a_w).log()
     t_h = (g_h / a_h).log()
 
-    t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
-    t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
-    t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
-    t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
+    #t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
+    #t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
+    #t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
+    #t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
 
     # w_x, w_y, w_w, w_h = weight
 
@@ -346,6 +346,7 @@ def nms_per_batch(bbox, score, threshold):
     total_keep_map = torch.stack(total_keep_map)
     return total_keep_map
 
+@torch.no_grad()
 def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres, neg_thres):
     '''
     labeling positive, neutral, negative anchor per batch
@@ -372,8 +373,9 @@ def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres, neg_thres):
 
     # find closest anchor for each gt_bbox
     #cross_IoU.permute(0,2,1)[keep.logical_not()] *= 0.
-    closest_indices = torch.argmax(cross_IoU, dim=2) # [B, N]
+    closest_indices = torch.argmax(cross_IoU, dim=2) # [B, N] (0 ~ A-1)
     one_hot_indices = F.one_hot(closest_indices, num_classes=anchor_num) # [B, N, A]
+    one_hot_indices = torch.logical_and(one_hot_indices, cross_IoU > 0.)
     one_hot_indices = (one_hot_indices * gt_bbox[:,:,2].unsqueeze(-1).repeat(1,1,anchor_num)).type(torch.bool) # [B, N, A] (for select real anchor by multiply width of gt bbox)
     closest_label = one_hot_indices.any(1) # [B, A]
     anchor_pos_label += closest_label

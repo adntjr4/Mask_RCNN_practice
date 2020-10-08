@@ -2,7 +2,7 @@ model:
   backbone:
     backbone_type: R50
   RPN:
-    anchor_size: [32, 64, 128, 256]
+    anchor_size: [512, 256, 128, 64, 32]
     anchor_ratio: [0.5, 1.0, 2.0]
     
     intermediate_channel_number: 256
@@ -12,11 +12,11 @@ model:
     nms_threshold: 0.7
     RPN_sample_number: 256
 
-    pre_nms_top_k: 6144
-    post_nms_top_k: 1024
+    pre_nms_top_k: 12000
+    post_nms_top_k: 2000
 
-    proposal_threshold: 0.5
-    proposal_nms_threshold: 0.4
+    proposal_threshold: 0.7
+    proposla_nms_threshold: 0.5
 
 _TRAIN_: ./training_cfg.yaml
   

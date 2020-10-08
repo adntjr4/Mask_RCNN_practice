@@ -1,0 +1,22 @@
+# TRAIN
+
+python train.py --device 0,1,2,3 --config conf/resnet_cfg.yaml
+python train.py --device 0,1,2,3 --config conf/fpn_cfg.yaml
+
+
+# EVALUATION
+
+python evaluate.py --device 0,1,2,3 --config conf/resnet_cfg.yaml --weight data/saved/checkpoint/R50_human_checkpoint.pth
+python evaluate.py --device 0,1,2,3 --config conf/fpn_cfg.yaml --weight data/saved/checkpoint/R50_human_checkpoint.pth
+
+python evaluate.py --device 0,1,2,3 --config conf/resnet_cfg.yaml --weight data/saved/model/R50_human8_epoch12.pth
+python evaluate.py --device 0,1,2,3 --config conf/fpn_cfg.yaml --weight data/saved/model/R50_fpn_human6_epoch16.pth
+
+
+# TEST
+
+python test.py --config conf/resnet_cfg.yaml --weight data/saved/checkpoint/R50_human_checkpoint.pth --shuffle --img_num 100
+python test.py --config conf/fpn_cfg.yaml --weight data/saved/checkpoint/R50_human_checkpoint.pth --shuffle --img_num 100
+
+python test.py --config conf/resnet_cfg.yaml --weight data/saved/model/R50_human8_epoch12.pth --shuffle --img_num 100
+python test.py --config conf/fpn_cfg.yaml --weight data/saved/model/R50_fpn_human6_epoch16.pth --shuffle --img_num 100
