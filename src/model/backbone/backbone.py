@@ -29,6 +29,11 @@ class BackBone(nn.Module):
         x = self.model.layer4(x)
         return [x]
 
+    def get_parameters(self):
+        return  list(self.model.layer2.parameters()) + \
+                list(self.model.layer3.parameters()) + \
+                list(self.model.layer4.parameters())
+
     def get_feature_channel(self):
         return 2048
 

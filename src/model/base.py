@@ -117,6 +117,6 @@ class BaseModel(nn.Module):
             return bboxes, scores, img_id_map
 
     def get_parameters(self):
-        return  list(self.backbone.parameters()) + \
+        return  list(self.backbone.get_parameters()) + \
                 list(self.RPN.parameters())
 
