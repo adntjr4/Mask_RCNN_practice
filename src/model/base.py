@@ -65,20 +65,6 @@ class BaseModel(nn.Module):
             # [RPN] anchor labeling
             anchor_info = self.RPN.get_anchor_label(data['bbox'], data['img_size'], model_out['rpn_cls_score'], model_out['rpn_bbox_pred'])
 
-            #### FOR DEBUGGING : POSITIVE LABEL IMAGE OUT
-            # from src.util.debugger import debug_draw_bbox3_cv_img
-            # img0_gt = data['bbox'][0]
-            # img0_ori = self.RPN._get_positive_anchors(anchor_info['origin_anchors'][0], anchor_info['anchor_label'][0])
-            # img0_anc = self.RPN._get_positive_anchors(anchor_info['anchors'][0], anchor_info['anchor_label'][0])
-
-            # img1_gt = data['bbox'][1]
-            # img1_ori = self.RPN._get_positive_anchors(anchor_info['origin_anchors'][1], anchor_info['anchor_label'][1])
-            # img1_anc = self.RPN._get_positive_anchors(anchor_info['anchors'][1], anchor_info['anchor_label'][1])
-
-            # debug_draw_bbox3_cv_img(data['img'][0], img0_gt, img0_ori, img0_anc, 'img0')
-            # debug_draw_bbox3_cv_img(data['img'][1], img1_gt, img1_ori, img1_anc, 'img1')
-            ##### FOR DEBUGGING ##########################
-
             # [RPN] class loss
             if loss_switch['rpn_cls']:
                 selected_cls_out, label = self.RPN.get_cls_output_target(anchor_info['cls_score'], anchor_info['anchor_label'])

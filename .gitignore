@@ -17,6 +17,7 @@ data/saved/checkpoint/*
 data/saved/model/*
 !data/saved/model/.gitkeep
 data/saved/result/*
+!data/saved/result/exp_report.md
 !data/saved/result/.gitkeep
 
 # ignore notepad python
