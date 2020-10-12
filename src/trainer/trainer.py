@@ -32,6 +32,8 @@ class Trainer:
         self.timer = Timer()
 
         self.progress_msg = ProgressMsg((self.max_epoch, len(self.data_loader)))
+
+        self.log_out_iter = 10
         
     def train(self):
         self.model.train()
@@ -42,6 +44,8 @@ class Trainer:
             self.log_out('keep training from last checkpoint...')
         else:
             self._set_optimizer()
+
+        
 
         # schduler
         self.scheduler = optim.lr_scheduler.StepLR(optimizer=self.optimizer, step_size=self.max_epoch*0.75, gamma=0.1)
@@ -65,11 +69,10 @@ class Trainer:
         self.log_out('saving model...')
         self.save_checkpoint()
 
+    def warmup(self):
+        raise NotImplementedError
+
     def train_1epoch(self):
-
-        #self.timer.data_load_start()
-        log_out_iter = 10
-
         avg_loss = {'rpn_cls_loss':0., 'rpn_box_loss':0. }
         for idx, data in enumerate(self.data_loader):
             #self.timer.data_load_end()
@@ -100,11 +103,11 @@ class Trainer:
                 avg_loss[loss_name] += losses[loss_name].item()
 
 
-            if (idx+1) % log_out_iter == 0:
-                loss_out_str = '[epoch %03d] %05d/%05d : '%(self.epoch+1, idx+1, len(self.data_loader)) 
+            if (idx+1) % self.log_out_iter == 0:
+                loss_out_str = '[epoch %02d/%02d] %04d/%04d : '%(self.epoch+1, self.max_epoch, idx+1, len(self.data_loader)) 
                 #loss_out_str += '(data:%.02fs, model:%.02fs), '%(self.timer.data_load_time, self.timer.model_time)
                 for loss_name in avg_loss:
-                    loss_out_str += '%s : %.4f / '%(loss_name, avg_loss[loss_name]/log_out_iter)
+                    loss_out_str += '%s : %.4f / '%(loss_name, avg_loss[loss_name]/self.log_out_iter)
                     avg_loss[loss_name] = 0.
                 self.progress_msg.line_reset()
                 self.log_out(loss_out_str)
