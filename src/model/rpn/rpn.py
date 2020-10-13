@@ -131,7 +131,10 @@ class RPN(nn.Module):
             img_id_map (Tensor) : [N]
         '''
         # get anchors from cls score and bbox variables
-        _, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
+        origin_anchors, post_cls_score, post_bbox_pred = self.anchor_preparing(image_size, cls_score, bbox_pred)
+
+        # bbox regression
+        post_anchors = box_regression(origin_anchors, post_bbox_pred, self.reg_weight)
 
         # select top N anchors
         indices = sort_per_batch(post_cls_score)
