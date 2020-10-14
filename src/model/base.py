@@ -13,6 +13,7 @@ class BaseModel(nn.Module):
 
         self.conf_backbone = conf_model['backbone']
         self.conf_RPN = conf_model['RPN']
+        self.RPN_sample_number = conf_model['RPN']['RPN_sample_number']
 
         self._build_backbone()
         self._build_RPN()
@@ -33,7 +34,7 @@ class BaseModel(nn.Module):
 
     def _set_criterion(self):
         # RPN losses (cls_loss, reg_loss)
-        self.rpn_cls_criterion = nn.BCELoss() # log loss
+        self.rpn_cls_criterion = nn.BCELoss(reduction='sum') # log loss
         self.rpn_box_criterion = nn.SmoothL1Loss(reduction='sum') # robust loss
 
         # and something more...
@@ -79,16 +80,18 @@ class BaseModel(nn.Module):
             # debug_draw_bbox3_cv_img(data['img'][1], img1_gt, img1_ori, img1_anc, 'img1')
             ##### FOR DEBUGGING ##########################
 
+            RPN_normalizer = data['bbox'].size()[0] * self.RPN_sample_number
+
             # [RPN] class loss
             if loss_switch['rpn_cls']:
                 selected_cls_out, label = self.RPN.get_cls_output_target(anchor_info['cls_score'], anchor_info['anchor_label'])
-                losses['rpn_cls_loss'] = self.rpn_cls_criterion(selected_cls_out, label)
+                losses['rpn_cls_loss'] = self.rpn_cls_criterion(selected_cls_out, label) / RPN_normalizer
 
             # [RPN] bbox regression loss
             if loss_switch['rpn_box']:
                 if anchor_info['closest_gt'].size()[0] != 0:
                     predicted_t, calculated_t = self.RPN.get_box_output_target(data['bbox'], anchor_info['origin_anchors'], anchor_info['bbox_pred'], anchor_info['anchor_label'], anchor_info['closest_gt'])
-                    losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t)
+                    losses['rpn_box_loss'] = self.rpn_box_criterion(predicted_t, calculated_t) / RPN_normalizer
                 else:
                     losses['rpn_box_loss'] = data['bbox'].new_zeros(())
 
