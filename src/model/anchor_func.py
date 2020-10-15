@@ -116,8 +116,8 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
 
 scale_clamp_max = math.log(2)
 scale_clamp_min = math.log(0.5)
-move_clamp_max = 0.3
-move_clamp_min = -0.3
+move_clamp_max = 0.5
+move_clamp_min = -0.5
 
 def box_regression(bbox, variables, weight):
     '''
@@ -185,10 +185,10 @@ def calculate_regression_parameter(anchor_bbox, gt_bbox, weight):
     t_w = (g_w / a_w).log()
     t_h = (g_h / a_h).log()
 
-    #t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
-    #t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
-    #t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
-    #t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
+    t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
+    t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
+    t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
+    t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
 
     # w_x, w_y, w_w, w_h = weight
 
@@ -430,15 +430,21 @@ def training_anchor_selection_per_batch(cls_score, anchor_label, sampling_number
         # random sampling
         pivot = int(sampling_number/2)
         if pos_num <= pivot:
+            #pos_copy_num = int(pivot/pos_num)
+
+            sampled_pos_num = pos_num # * pos_copy_num
+            sampled_neg_num = sampling_number - sampled_pos_num
+
+            #sampled_pos_cls_out = torch.cat([pos_cls_out]*pos_copy_num)
             sampled_pos_cls_out = pos_cls_out
-            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampling_number-pos_num]]
-            sampled_pos_num = pos_num
-            sampled_neg_num = sampling_number - pos_num
+            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampled_neg_num]]
+            
         else:
-            sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:pivot]]
-            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampling_number-pivot]]
             sampled_pos_num = pivot
-            sampled_neg_num = sampling_number - pivot
+            sampled_neg_num = sampling_number - sampled_pos_num
+
+            sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:sampled_pos_num]]
+            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampled_neg_num]]
 
         one_cls_score = torch.cat([sampled_pos_cls_out, sampled_neg_cls_out]).squeeze(-1)
         one_cls_gt = torch.cat([pos_cls_out.new_ones((sampled_pos_num)), pos_cls_out.new_zeros((sampled_neg_num))])

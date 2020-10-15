@@ -46,7 +46,7 @@ class RPNHead(nn.Module):
         bbox_pred = []
         for idx, feature in enumerate(features):
             inter_feature = F.relu(self.inter_conv(feature))
-            cls_score.append(torch.sigmoid(self.cls_conv(inter_feature))) # [B, 1*k, H, W]
-            bbox_pred.append(self.reg_conv(inter_feature))     # [B, 4*k, H, W]
+            cls_score.append(torch.sigmoid(self.cls_conv(inter_feature)))   # [B, 1*k, H, W]
+            bbox_pred.append(self.reg_conv(inter_feature))                  # [B, 4*k, H, W]
 
         return {'rpn_cls_score': cls_score, 'rpn_bbox_pred': bbox_pred}
