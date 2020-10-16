@@ -42,7 +42,7 @@ if __name__ == '__main__':
     
     args = args.parse_args()
 
-    #args.weight = 'data/saved/checkpoint/R50_human_checkpoint.pth'
+    args.weight = 'data/saved/checkpoint/R50_human_checkpoint.pth'
     #args.weight = 'data/saved/model/R50_human6_epoch16.pth'
 
     assert args.config is not None, 'config file path is needed'

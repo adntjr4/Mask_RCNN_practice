@@ -2,7 +2,7 @@
 
 ## 수정 사항
 
-- post top-k 값 조정 : 2000 -> 1000
+- post top-k 값 조정 : 2000 -> 1000 (Hard negative sampling)
 - regression loss : mean -> sum
 - image pre-processing : subtract mean
 - freeze 2 front layer of backbone
@@ -76,3 +76,10 @@
 | ![img](./img/week7/test74.jpg) | ![img](./img/week7/test75.jpg) |
 | ![img](./img/week7/test76.jpg) | ![img](./img/week7/test77.jpg) |
 | ![img](./img/week7/test78.jpg) | ![img](./img/week7/test79.jpg) |
+
+
+# Question
+
+- score 점수의 문제? (layer 차이)
+- 뒤의 layer 차이? (double bbox regression)
+- labeling 방법?

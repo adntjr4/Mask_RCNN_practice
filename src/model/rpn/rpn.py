@@ -17,6 +17,7 @@ from src.model.anchor_func import ( generate_anchor_form,
                                     top_k_from_indices )
 from src.util.util import transform_xywh
 
+
 class RPN(nn.Module):
     '''
     F: number of feature map
@@ -168,11 +169,7 @@ class RPN(nn.Module):
             img_id_map (Tensor) : [N]
         '''
         # get anchors from cls score and bbox variables
-        _, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
-
-        #######
-        # print(post_cls_score.max())
-        ######
+        origin_anchors, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
 
         # select anchors which has over threshold
         over_score_map = post_cls_score.squeeze(-1) > threshold

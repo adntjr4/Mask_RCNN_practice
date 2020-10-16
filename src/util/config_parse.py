@@ -41,4 +41,3 @@ if __name__ == "__main__":
     args.config = "./conf/resnet_cfg.yaml"
 
     cp = ConfigParser(args)
-    print("t")

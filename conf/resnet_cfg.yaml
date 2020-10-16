@@ -7,7 +7,7 @@ model:
     
     intermediate_channel_number: 256
     positive_threshold: 0.7
-    negative_threshold: 0.7
+    negative_threshold: 0.3
     regression_weight: [1, 1, 1, 1]
     nms_threshold: 0.7
     RPN_sample_number: 256

@@ -7,6 +7,7 @@ from src.model.backbone.fpn import FPN
 from src.model.rpn.rpn import RPN
 from src.model.rpn.rpn_head import RPNHead
 
+
 class BaseModel(nn.Module):
     def __init__(self, conf_model):
         super().__init__()
@@ -108,7 +109,7 @@ class BaseModel(nn.Module):
                 self.conf_RPN['proposal_threshold'],
                 self.conf_RPN['proposla_nms_threshold'])
             '''
-            bboxes, scores, img_id_map = self.RPN.region_proposal_top_N(
+            origin_bboxes, bboxes, scores, img_id_map = self.RPN.region_proposal_top_N(
                 data['img_size'], 
                 model_out['rpn_cls_score'], 
                 model_out['rpn_bbox_pred'], 
