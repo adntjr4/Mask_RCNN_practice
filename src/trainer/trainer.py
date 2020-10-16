@@ -45,8 +45,6 @@ class Trainer:
         else:
             self._set_optimizer()
 
-        
-
         # schduler
         #self.scheduler = optim.lr_scheduler.StepLR(optimizer=self.optimizer, step_size=self.max_epoch*0.75, gamma=0.1)
 
@@ -75,7 +73,6 @@ class Trainer:
     def train_1epoch(self):
         avg_loss = {'rpn_cls_loss':0., 'rpn_box_loss':0. }
         for idx, data in enumerate(self.data_loader):
-            #self.timer.data_load_end()
             # to device
             cuda_data = {}
             for k, v in data.items():
@@ -83,10 +80,8 @@ class Trainer:
                     cuda_data[k] = v.cuda()
 
             # get losses (return dict)
-            #self.timer.model_start()
             losses = self.model(cuda_data, mode='train')
             losses = {k:losses[k].mean() for k in losses}
-            #self.timer.model_end()
 
             # loss weight
             for loss_key in losses:
@@ -102,10 +97,8 @@ class Trainer:
             for loss_name in losses:
                 avg_loss[loss_name] += losses[loss_name].item()
 
-
             if (idx+1) % self.log_out_iter == 0:
                 loss_out_str = '[epoch %02d/%02d] %04d/%04d : '%(self.epoch+1, self.max_epoch, idx+1, len(self.data_loader)) 
-                #loss_out_str += '(data:%.02fs, model:%.02fs), '%(self.timer.data_load_time, self.timer.model_time)
                 for loss_name in avg_loss:
                     loss_out_str += '%s : %.4f / '%(loss_name, avg_loss[loss_name]/self.log_out_iter)
                     avg_loss[loss_name] = 0.
@@ -113,8 +106,6 @@ class Trainer:
                 self.log_out(loss_out_str)
 
             self.progress_msg.print_prog_msg((self.epoch, idx))
-
-            #self.timer.data_load_start()
 
     def save_checkpoint(self):
         torch.save({'epoch': self.epoch+1,

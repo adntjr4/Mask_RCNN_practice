@@ -74,7 +74,6 @@ class RPN(nn.Module):
             bbox_pred (List) : List([B, 4*k, H, W])
         Returns:
             origin_anchors (Tensor) : [B, A, 4]
-            post_anchors (Tensor) : [B, A, 4]
             post_cls_score (Tensor) : [B, A, 1]
             post_bbox_pred (Tensor) : [B, A, 4]
             keep_map (Tensor) : [B, A]
@@ -88,7 +87,7 @@ class RPN(nn.Module):
             #anchor_list.append(getattr(self, 'default_anchor_bbox%d'%idx).detach().view(-1,4).repeat(batch_size,1,1)) # [B, A, 4]
 
         # anchor preprocessing (top_k, bbox regression, nms etc.)
-        return anchor_preprocessing(anchor_list, image_size, cls_score, bbox_pred, self.pre_k, self.post_k, self.reg_weight, self.nms_thres)
+        return anchor_preprocessing(anchor_list, image_size, cls_score, bbox_pred, self.pre_k, self.post_k, self.nms_thres)
 
     def get_anchor_label(self, gt_bbox, image_size, cls_score, bbox_pred):
         '''
@@ -100,15 +99,14 @@ class RPN(nn.Module):
         Returns:
             anchor_info (Dict)
         '''
-        o_anc, p_anc, p_cls, p_bbox = self.anchor_preparing(image_size, cls_score, bbox_pred)
+        o_anc, p_cls, p_bbox = self.anchor_preparing(image_size, cls_score, bbox_pred)
 
         anchor_info = dict()
         anchor_info['origin_anchors'] = o_anc
-        anchor_info['anchors'] = p_anc
         anchor_info['cls_score'] = p_cls
         anchor_info['bbox_pred'] = p_bbox
 
-        anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_per_batch(anchor_info['anchors'], gt_bbox, self.pos_thres, self.neg_thres)
+        anchor_info['anchor_label'], anchor_info['closest_gt'] = anchor_labeling_per_batch(anchor_info['origin_anchors'], gt_bbox, self.pos_thres, self.neg_thres)
 
         return anchor_info
 
@@ -134,7 +132,10 @@ class RPN(nn.Module):
             img_id_map (Tensor) : [N]
         '''
         # get anchors from cls score and bbox variables
-        _, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
+        origin_anchors, post_cls_score, post_bbox_pred = self.anchor_preparing(image_size, cls_score, bbox_pred)
+
+        # bbox regression
+        post_anchors = box_regression(origin_anchors, post_bbox_pred, self.reg_weight)
 
         # select top N anchors
         indices = sort_per_batch(post_cls_score)
@@ -169,10 +170,13 @@ class RPN(nn.Module):
             img_id_map (Tensor) : [N]
         '''
         # get anchors from cls score and bbox variables
-        origin_anchors, post_anchors, post_cls_score, _ = self.anchor_preparing(image_size, cls_score, bbox_pred)
+        origin_anchors, post_cls_score, post_bbox_pred = self.anchor_preparing(image_size, cls_score, bbox_pred)
 
         # select anchors which has over threshold
         over_score_map = post_cls_score.squeeze(-1) > threshold
+
+        # bbox regression
+        post_anchors = box_regression(origin_anchors, post_bbox_pred, self.reg_weight)
         
         # proposal nms
         nms_keep = nms_per_batch(post_anchors, post_cls_score, nms_thres)

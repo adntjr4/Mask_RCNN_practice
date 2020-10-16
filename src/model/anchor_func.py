@@ -28,20 +28,23 @@ def generate_anchor_form(anchor, feature_size, image_size):
         anchor_bbox_list = []
         for anc in anchor[idx]:
             # repeat the aranged tensor and expand
-            y, x = torch.meshgrid(torch.arange(feature_size_h), torch.arange(feature_size_w))
+            mesh_y, mesh_x = torch.meshgrid(torch.arange(feature_size_h), torch.arange(feature_size_w))
 
-            x = x * x_expand_ratio # [W] -> [H, W]
-            y = y * y_expand_ratio # [H] -> [H, W]
+            center_x = (mesh_x+0.5) * x_expand_ratio
+            center_y = (mesh_y+0.5) * y_expand_ratio
 
-            w = torch.ones((feature_size_h, feature_size_w)) * anc[0]          # [H, W]
-            h = torch.ones((feature_size_h, feature_size_w)) * anc[0] * anc[1] # [H, W]
+            w = torch.ones((feature_size_h, feature_size_w)) * math.sqrt(anc[0]*anc[0]/anc[1])
+            h = torch.ones((feature_size_h, feature_size_w)) * math.sqrt(anc[0]*anc[0]*anc[1])
+
+            x = center_x - 0.5*w
+            y = center_y - 0.5*h
                 
             anchor_bbox_t = torch.stack((x,y,w,h), dim=2) # [H, W, 4]
             anchor_bbox_list.append(anchor_bbox_t)
         anchor_bbox.append(torch.stack(anchor_bbox_list).cuda()) # [k, H, W, 4]
     return anchor_bbox
 
-def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, post_top_k, bbox_weight, nms_thres):
+def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, post_top_k, nms_thres):
     '''
     Args:
         anchors     (Tensor) : List([B, A, 4])
@@ -50,11 +53,9 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
         bbox_pred   (Tensor) : List([B, 4*k, H, W])
         pre_top_k   (int)    
         post_top_k  (int)    
-        bbox_weight (Tuple)  
         nms_thres   (float)  
     Returns:
-        post_origin_anchors (Tensor) : [B, A, 4]
-        post_anchors   (Tensor) : [B, A, 4]
+        origin_anchors   (Tensor) : [B, A, 4]
         post_cls_score (Tensor) : [B, A, 1]
         post_bbox_pred (Tensor) : [B, A, 4]
         post_keep_map  (Tensor) : [B, A]
@@ -73,12 +74,8 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
         lvl_cls_score_top = top_k_from_indices(lvl_cls_score, indices, pre_top_k)
         lvl_bbox_pred_top = top_k_from_indices(lvl_bbox_pred, indices, pre_top_k)
 
-        # bbox regression
-        lvl_moved_anchors = box_regression(lvl_anchors_top, lvl_bbox_pred_top, bbox_weight)
-        concat_anchors.append(lvl_moved_anchors)
-
         # NMS
-        concat_keep_map.append(nms_per_batch(lvl_moved_anchors, lvl_cls_score_top, nms_thres))
+        concat_keep_map.append(nms_per_batch(lvl_anchors_top, lvl_cls_score_top, nms_thres))
 
         # append
         origin_anchors.append(lvl_anchors_top)
@@ -87,37 +84,30 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
 
     # concatenate all level anchors
     origin_anchors   = torch.cat(origin_anchors,   dim=1)
-    concat_anchors   = torch.cat(concat_anchors,   dim=1)
     concat_cls_score = torch.cat(concat_cls_score, dim=1)
     concat_bbox_pred = torch.cat(concat_bbox_pred, dim=1)
-    concat_keep_map  = torch.cat(concat_keep_map,  dim=1)
-
-    # invaild bbox (box edge cliping)
-    invaild_bbox_cliping_per_batch(concat_anchors, image_size)
-    keep = concat_keep_map
+    keep  = torch.cat(concat_keep_map,  dim=1)
 
     # for each batch do {post-nms-top-k}
-    post_origin_anchors, post_anchors, post_cls_score, post_bbox_pred = [], [], [], []
+    post_origin_anchors, post_cls_score, post_bbox_pred = [], [], []
     for idx in range(concat_cls_score.size()[0]):
         # post nms top k
         indices = sort_per_batch(concat_cls_score[idx][keep[idx]])
         post_origin_anchors.append(top_k_from_indices(origin_anchors[idx][keep[idx]], indices, post_top_k))
-        post_anchors.append(top_k_from_indices(concat_anchors[idx][keep[idx]], indices, post_top_k))
         post_cls_score.append(top_k_from_indices(concat_cls_score[idx][keep[idx]], indices, post_top_k))
         post_bbox_pred.append(top_k_from_indices(concat_bbox_pred[idx][keep[idx]], indices, post_top_k))
 
     # stack all batch
     post_origin_anchors = torch.stack(post_origin_anchors)
-    post_anchors = torch.stack(post_anchors)
     post_cls_score = torch.stack(post_cls_score)
     post_bbox_pred = torch.stack(post_bbox_pred)
 
-    return post_origin_anchors, post_anchors, post_cls_score, post_bbox_pred
+    return post_origin_anchors, post_cls_score, post_bbox_pred
 
-scale_clamp_max = math.log(2)
-scale_clamp_min = math.log(0.5)
-move_clamp_max = 0.5
-move_clamp_min = -0.5
+#scale_clamp_max = math.log(2)
+#scale_clamp_min = math.log(0.5)
+#move_clamp_max = 0.3
+#move_clamp_min = -0.3
 
 def box_regression(bbox, variables, weight):
     '''
@@ -143,10 +133,10 @@ def box_regression(bbox, variables, weight):
     t_w *= w_w
     t_h *= w_h
 
-    t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
-    t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
-    t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
-    t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
+    #t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
+    #t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
+    #t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
+    #t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
 
     m_x_c = a_x_c + a_w * t_x
     m_y_c = a_y_c + a_h * t_y
