@@ -12,7 +12,7 @@ def load_model(file_name):
 def draw_boxes(img, boxes, color=(0,255,0)):
     if type(img) == torch.Tensor:
         img = img.cpu()
-        img = img.permute(1,2,0).numpy()
+        img = img.permute(1,2,0).numpy()[:,:,[2,1,0]]
 
     if type(boxes) == torch.Tensor:
         boxes = boxes.cpu()

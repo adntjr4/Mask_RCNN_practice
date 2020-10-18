@@ -12,6 +12,7 @@ __pycache__/*
 data/coco
 data/coco/*
 data/tmp/*
+data/output/*
 data/saved/checkpoint/*
 !data/saved/checkpoint/.gitkeep
 data/saved/model/*
@@ -19,6 +20,3 @@ data/saved/model/*
 data/saved/result/*
 !data/saved/result/exp_report.md
 !data/saved/result/.gitkeep
-
-# ignore notepad python
-notepad.py

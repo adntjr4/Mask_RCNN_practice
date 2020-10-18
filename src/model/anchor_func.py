@@ -104,10 +104,10 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
 
     return post_origin_anchors, post_cls_score, post_bbox_pred
 
-#scale_clamp_max = math.log(2)
-#scale_clamp_min = math.log(0.5)
-#move_clamp_max = 0.3
-#move_clamp_min = -0.3
+# scale_clamp_max = math.log(2)
+# scale_clamp_min = math.log(0.5)
+# move_clamp_max = 0.3
+# move_clamp_min = -0.3
 
 def box_regression(bbox, variables, weight):
     '''
@@ -133,10 +133,10 @@ def box_regression(bbox, variables, weight):
     t_w *= w_w
     t_h *= w_h
 
-    #t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
-    #t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
-    #t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
-    #t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
+    # t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
+    # t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
+    # t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
+    # t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
 
     m_x_c = a_x_c + a_w * t_x
     m_y_c = a_y_c + a_h * t_y
@@ -175,10 +175,10 @@ def calculate_regression_parameter(anchor_bbox, gt_bbox, weight):
     t_w = (g_w / a_w).log()
     t_h = (g_h / a_h).log()
 
-    t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
-    t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
-    t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
-    t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
+    # t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
+    # t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
+    # t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
+    # t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
 
     # w_x, w_y, w_w, w_h = weight
 
@@ -396,75 +396,6 @@ def anchor_labeling_no_gt(anchor, keep):
     anchor_label = keep * -1.0
     closest_gt = keep.new_zeros(0,2)
     return anchor_label, closest_gt
-    
-def training_anchor_selection_per_batch(cls_score, anchor_label, sampling_number):
-    '''
-    random anchor sampling for training
-    Args:
-        cls_score (Tensor) : [B, A, 1]
-        anchor_label (Tensor) : [B, A] (1, 0, -1)
-        sampling_number (int)
-    returns:
-        training_cls_score (Tensor) : [B, sampling_number]
-        training_cls_gt : [B, sampling_number]
-    '''
-    batch_size, _, _ = cls_score.size()
-
-    training_cls_score_list = []
-    training_cls_gt_list = []
-
-    for b_idx in range(batch_size):
-        pos_cls_out, neg_cls_out = cls_score[b_idx][anchor_label[b_idx] > 0.1], cls_score[b_idx][anchor_label[b_idx] < -0.1] # [P], [N]
-        pos_num,     neg_num     = pos_cls_out.size()[0],                     neg_cls_out.size()[0]
-
-        # random sampling
-        pivot = int(sampling_number/2)
-        if pos_num <= pivot:
-            #pos_copy_num = int(pivot/pos_num)
-
-            sampled_pos_num = pos_num # * pos_copy_num
-            sampled_neg_num = sampling_number - sampled_pos_num
-
-            #sampled_pos_cls_out = torch.cat([pos_cls_out]*pos_copy_num)
-            sampled_pos_cls_out = pos_cls_out
-            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampled_neg_num]]
-            
-        else:
-            sampled_pos_num = pivot
-            sampled_neg_num = sampling_number - sampled_pos_num
-
-            sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:sampled_pos_num]]
-            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampled_neg_num]]
-
-        one_cls_score = torch.cat([sampled_pos_cls_out, sampled_neg_cls_out]).squeeze(-1)
-        one_cls_gt = torch.cat([pos_cls_out.new_ones((sampled_pos_num)), pos_cls_out.new_zeros((sampled_neg_num))])
-
-        training_cls_score_list.append(one_cls_score)
-        training_cls_gt_list.append(one_cls_gt)
-
-    return torch.stack(training_cls_score_list), torch.stack(training_cls_gt_list)
-
-def training_bbox_regression_calculation(gt_bbox, origin_anchors, bbox_pred, anchor_label, closest_gt, reg_weight):
-    '''
-    Args:
-        gt_bbox (Tensor) : [B, N, 4]
-        origin_anchors (Tensor) : [B, A, 4]
-        bbox_pred (Tensor) : [B, A, 4]
-        anchor_label (Tensor) : [B, A] (1, 0, -1)
-        closest_gt (Tensor) : [P, 2] (0 ~ B-1), (0 ~ N-1)
-    Returns:
-        predicted_t  : Tensor[P, 4]
-        calculated_t : Tensor[P, 4]
-    '''
-    # calculate target regression parameter
-    positive_anchors = origin_anchors[anchor_label>0.1] # [P, 4]
-    positive_gt = torch.stack([gt_bbox[batch_num][gt_num] for batch_num, gt_num in closest_gt]) # [P, 4]
-    calculated_t = calculate_regression_parameter(positive_anchors, positive_gt, reg_weight) # [P, 4]
-
-    # reshape output regression prediction
-    predicted_t = bbox_pred[anchor_label>0.1] # [P, 4]
-
-    return predicted_t, calculated_t
 
 def reshape_output(output, n):
     '''

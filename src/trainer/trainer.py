@@ -21,8 +21,8 @@ class Trainer:
         self.max_epoch = self.config['train']['max_epoch']
 
         self.loss_weight = {}
-        self.loss_weight['rpn_cls_loss'] = float(self.config['train']['RPN_cls_loss_weight'])
-        self.loss_weight['rpn_box_loss'] = float(self.config['train']['RPN_box_loss_weight'])
+        self.loss_weight['rpn_obj'] = float(self.config['train']['RPN_objectness_loss_weight'])
+        self.loss_weight['rpn_reg'] = float(self.config['train']['RPN_regression_loss_weight'])
 
         self.checkpoint_name = self.config.get_model_name()
         if self.human_only:
@@ -71,7 +71,7 @@ class Trainer:
         raise NotImplementedError
 
     def train_1epoch(self):
-        avg_loss = {'rpn_cls_loss':0., 'rpn_box_loss':0. }
+        avg_loss = {'total':0., 'rpn_obj':0., 'rpn_reg':0. }
         for idx, data in enumerate(self.data_loader):
             # to device
             cuda_data = {}
@@ -94,11 +94,13 @@ class Trainer:
             self.optimizer.step()
 
             # print loss
-            for loss_name in losses:
-                avg_loss[loss_name] += losses[loss_name].item()
+            for loss_key in losses:
+                avg_loss['total'] += losses[loss_key].item()
+                avg_loss[loss_key] += losses[loss_key].item()
 
             if (idx+1) % self.log_out_iter == 0:
-                loss_out_str = '[epoch %02d/%02d] %04d/%04d : '%(self.epoch+1, self.max_epoch, idx+1, len(self.data_loader)) 
+                loss_out_str = '[epoch %02d/%02d] %04d/%04d : '%(self.epoch+1, self.max_epoch, idx+1, len(self.data_loader))
+                
                 for loss_name in avg_loss:
                     loss_out_str += '%s : %.4f / '%(loss_name, avg_loss[loss_name]/self.log_out_iter)
                     avg_loss[loss_name] = 0.

@@ -42,11 +42,11 @@ class RPNHead(nn.Module):
             return len(self.anchor_size) * len(self.anchor_ratio)
 
     def forward(self, features):
-        cls_score = []
-        bbox_pred = []
-        for idx, feature in enumerate(features):
+        objectness = []
+        bbox_delta = []
+        for feature in features:
             inter_feature = F.relu(self.inter_conv(feature))
-            cls_score.append(torch.sigmoid(self.cls_conv(inter_feature)))   # [B, 1*k, H, W]
-            bbox_pred.append(self.reg_conv(inter_feature))                  # [B, 4*k, H, W]
+            objectness.append(torch.sigmoid(self.cls_conv(inter_feature)))   # [B, 1*k, H, W]
+            bbox_delta.append(self.reg_conv(inter_feature))                  # [B, 4*k, H, W]
 
-        return {'rpn_cls_score': cls_score, 'rpn_bbox_pred': bbox_pred}
+        return {'rpn_objectness': objectness, 'rpn_bbox_delta': bbox_delta}

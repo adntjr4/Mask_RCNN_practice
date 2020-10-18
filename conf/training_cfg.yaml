@@ -10,12 +10,12 @@ data_loader:
   test_data: test2017
 
   input_size: [1024, 1024]
-  batch_size: 16
+  batch_size: 4
   num_workers: 4
 
 train:
-  RPN_cls_loss_weight: 1
-  RPN_box_loss_weight: 1
+  RPN_objectness_loss_weight: 1
+  RPN_regression_loss_weight: 1
   max_epoch: 36
   optimizer: SGD
   lr: 0.001
