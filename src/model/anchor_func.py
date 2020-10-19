@@ -104,11 +104,6 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
 
     return post_origin_anchors, post_cls_score, post_bbox_pred
 
-# scale_clamp_max = math.log(2)
-# scale_clamp_min = math.log(0.5)
-# move_clamp_max = 0.3
-# move_clamp_min = -0.3
-
 def box_regression(bbox, variables, weight):
     '''
     Args:
@@ -128,15 +123,10 @@ def box_regression(bbox, variables, weight):
 
     w_x, w_y, w_w, w_h = weight
 
-    t_x *= w_x
-    t_y *= w_y
-    t_w *= w_w
-    t_h *= w_h
-
-    # t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
-    # t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
-    # t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
-    # t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
+    t_x /= w_x
+    t_y /= w_y
+    t_w /= w_w
+    t_h /= w_h
 
     m_x_c = a_x_c + a_w * t_x
     m_y_c = a_y_c + a_h * t_y
@@ -175,17 +165,11 @@ def calculate_regression_parameter(anchor_bbox, gt_bbox, weight):
     t_w = (g_w / a_w).log()
     t_h = (g_h / a_h).log()
 
-    # t_x = torch.clamp(t_x, min=move_clamp_min,  max=move_clamp_max)
-    # t_y = torch.clamp(t_y, min=move_clamp_min,  max=move_clamp_max)
-    # t_w = torch.clamp(t_w, min=scale_clamp_min, max=scale_clamp_max)
-    # t_h = torch.clamp(t_h, min=scale_clamp_min, max=scale_clamp_max)
-
-    # w_x, w_y, w_w, w_h = weight
-
-    # t_x /= w_x
-    # t_y /= w_y
-    # t_w /= w_w
-    # t_h /= w_h
+    w_x, w_y, w_w, w_h = weight
+    t_x *= w_x
+    t_y *= w_y
+    t_w *= w_w
+    t_h *= w_h
 
     regression_parameter = torch.cat([t_x, t_y, t_w, t_h], dim=cat_dim)   # [..., N, 4]
 

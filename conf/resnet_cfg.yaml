@@ -20,7 +20,7 @@ model:
   box_head:
     fc_channel: 256
     roi_resolution: 7
-    regression_weight: [1, 1, 1, 1]
+    regression_weight: [10, 10, 5, 5]
     labeling_threshold: 0.5
     sampling_number: 512
     positive_fraction: 0.25
