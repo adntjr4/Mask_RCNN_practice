@@ -78,16 +78,14 @@ class BoxHead(nn.Module):
         losses = dict()
         if mode == 'train':
             # anchor labeling
-            proposals_label, closest_gt = anchor_labeling_per_batch(proposals, data['bbox'], self.label_thres, self.label_thres)
+            proposals_label, closest_gt = anchor_labeling_per_batch(proposals, data['bbox'], self.label_thres, self.label_thres, closest=False)
 
             # objectness loss
             selected_cls_out, label = self.get_cls_output_target(objectnesses, proposals_label)
             losses['box_obj'] = self.box_objectness_criterion(selected_cls_out, label)
 
-            #print(proposals_label)
-
             # bbox regression loss
-            if closest_gt.size()[0] != 0:
+            if torch.sum(proposals_label > 0) != 0:
                 predicted_t, calculated_t = self.get_box_output_target(data['bbox'], proposals, bbox_deltas, proposals_label, closest_gt)
                 losses['box_reg'] = self.box_regression_criterion(predicted_t, calculated_t)
             else:

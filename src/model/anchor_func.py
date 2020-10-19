@@ -321,12 +321,15 @@ def nms_per_batch(bbox, score, threshold):
     return total_keep_map
 
 @torch.no_grad()
-def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres, neg_thres):
+def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres:float, neg_thres:float, closest:bool=True):
     '''
     labeling positive, neutral, negative anchor per batch
     Args:
         anchor (Tensor) : [B, A, 4]
         gt_bbox (Tensor) : [B, N, 4]
+        pos_thres (float) : positive IoU threshold
+        neg_thres (float) : negative IoU threshold
+        closest (bool) : if True, the closest anchor to any gt will labeled as positvie. 
     Returns:
         anchor_label (Tensor) : [B, A] (1, 0, -1)
         closest_gt (Tensor) : [P, 2] (0 ~ B-1), (0 ~ N-1)
@@ -346,13 +349,13 @@ def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres, neg_thres):
     anchor_neg_label = torch.logical_not((cross_IoU > neg_thres).any(1)) # [B, A]
 
     # find closest anchor for each gt_bbox
-    #cross_IoU.permute(0,2,1)[keep.logical_not()] *= 0.
-    closest_indices = torch.argmax(cross_IoU, dim=2) # [B, N] (0 ~ A-1)
-    one_hot_indices = F.one_hot(closest_indices, num_classes=anchor_num) # [B, N, A]
-    one_hot_indices = torch.logical_and(one_hot_indices, cross_IoU > 0.)
-    one_hot_indices = (one_hot_indices * gt_bbox[:,:,2].unsqueeze(-1).repeat(1,1,anchor_num)).type(torch.bool) # [B, N, A] (for select real anchor by multiply width of gt bbox)
-    closest_label = one_hot_indices.any(1) # [B, A]
-    anchor_pos_label += closest_label
+    if closest:
+        closest_indices = torch.argmax(cross_IoU, dim=2) # [B, N] (0 ~ A-1)
+        one_hot_indices = F.one_hot(closest_indices, num_classes=anchor_num) # [B, N, A]
+        one_hot_indices = torch.logical_and(one_hot_indices, cross_IoU > 0.)
+        one_hot_indices = (one_hot_indices * gt_bbox[:,:,2].unsqueeze(-1).repeat(1,1,anchor_num)).type(torch.bool) # [B, N, A] (for select real anchor by multiply width of gt bbox)
+        closest_label = one_hot_indices.any(1) # [B, A]
+        anchor_pos_label += closest_label
 
     # find closest gt_bbox for each anchor
     closest_gt_indices = torch.argmax(cross_IoU, dim=1) # [B, A]

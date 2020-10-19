@@ -10,7 +10,7 @@ data_loader:
   test_data: test2017
 
   input_size: [1024, 1024]
-  batch_size: 8
+  batch_size: 12
   num_workers: 4
 
 train:
@@ -20,5 +20,5 @@ train:
   box_regression_loss_weight: 0.01
   max_epoch: 24
   optimizer: SGD
-  lr: 0.0005
+  lr: 0.00075
   checkpoint_dir: data/saved/checkpoint
