@@ -17,7 +17,7 @@ def main(config):
     # data loader
     conf_dl= config['data_loader']
 
-    train_data_set = DataSet(conf_dl, mode='val', human_only=True)
+    train_data_set = DataSet(conf_dl, mode='train', human_only=True)
     train_data_loader = DataLoader(train_data_set, batch_size=conf_dl['batch_size'], shuffle=True, num_workers=conf_dl['num_workers'], collate_fn=batch_collate)
 
     # model

@@ -35,7 +35,7 @@ class Trainer:
 
         self.progress_msg = ProgressMsg((self.max_epoch, len(self.data_loader)))
 
-        self.log_out_iter = 1
+        self.log_out_iter = 10
         
     def train(self):
         self.model.train()
