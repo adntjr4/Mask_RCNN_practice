@@ -23,6 +23,8 @@ class Trainer:
         self.loss_weight = {}
         self.loss_weight['rpn_obj'] = float(self.config['train']['RPN_objectness_loss_weight'])
         self.loss_weight['rpn_reg'] = float(self.config['train']['RPN_regression_loss_weight'])
+        self.loss_weight['box_obj'] = float(self.config['train']['box_objectness_loss_weight'])
+        self.loss_weight['box_reg'] = float(self.config['train']['box_regression_loss_weight'])
 
         self.checkpoint_name = self.config.get_model_name()
         if self.human_only:
@@ -33,7 +35,7 @@ class Trainer:
 
         self.progress_msg = ProgressMsg((self.max_epoch, len(self.data_loader)))
 
-        self.log_out_iter = 10
+        self.log_out_iter = 1
         
     def train(self):
         self.model.train()
@@ -71,7 +73,7 @@ class Trainer:
         raise NotImplementedError
 
     def train_1epoch(self):
-        avg_loss = {'total':0., 'rpn_obj':0., 'rpn_reg':0. }
+        avg_loss = {'total':0., 'rpn_obj':0., 'rpn_reg':0., 'box_obj':0., 'box_reg':0. }
         for idx, data in enumerate(self.data_loader):
             # to device
             cuda_data = {}

@@ -7,6 +7,7 @@ from src.model.backbone.backbone import BackBone
 from src.model.backbone.fpn import FPN
 from src.model.rpn.rpn import RPN
 from src.model.rpn.rpn_head import RPNHead
+from src.model.box_head.box_head import BoxHead
 from src.util.util import transform_xywh
 
 
@@ -16,10 +17,11 @@ class BaseModel(nn.Module):
 
         self.conf_backbone = conf_model['backbone']
         self.conf_RPN = conf_model['RPN']
-        self.RPN_sample_number = conf_model['RPN']['RPN_sample_number']
+        self.conf_box = conf_model['box_head']
 
         self._build_backbone()
         self._build_RPN()
+        self._build_box_head()
 
     def _build_backbone(self):
         if 'FPN' in self.conf_backbone:
@@ -33,6 +35,11 @@ class BaseModel(nn.Module):
                         self.backbone.get_feature_channel(), 
                         self.backbone.get_feature_size(input_size),
                         self.conf_RPN)
+
+    def _build_box_head(self):
+        self.box_head = BoxHead('FPN' in self.conf_backbone,
+                                self.backbone.get_feature_channel(),
+                                self.conf_box)
 
     def forward(self, data, mode):
         '''
@@ -53,10 +60,12 @@ class BaseModel(nn.Module):
             losses = dict()
 
             # RPN
-            proposals, losses = self.RPN(feature_map, data, mode)
-            losses.update(losses)
+            proposals, rpn_losses = self.RPN(feature_map, data, mode)
+            losses.update(rpn_losses)
 
             # RoI head
+            box_head_losses = self.box_head(feature_map, proposals, data, mode)
+            losses.update(box_head_losses)
 
             return losses
 
@@ -80,5 +89,6 @@ class BaseModel(nn.Module):
 
     def get_parameters(self):
         return  list(self.backbone.get_parameters()) + \
-                list(self.RPN.parameters())
+                list(self.RPN.parameters()) + \
+                list(self.box_head.parameters())
 

@@ -36,15 +36,14 @@ class RPN(nn.Module):
         self.rpn_head = RPNHead(FPN_mode, feature_channel, conf_RPN)
 
         # init configuration values
-        self.pos_thres      = conf_RPN['positive_threshold']
-        self.neg_thres      = conf_RPN['negative_threshold']
-        self.reg_weight     = conf_RPN['regression_weight']
-        self.nms_thres      = conf_RPN['nms_threshold']
-        self.sample_number  = conf_RPN['RPN_sample_number']
-        self.pre_k          = conf_RPN['pre_nms_top_k']
-        self.post_k         = conf_RPN['post_nms_top_k']
-        self.proposal_thres = conf_RPN['proposal_threshold']
-        
+        self.pos_thres         = conf_RPN['positive_threshold']
+        self.neg_thres         = conf_RPN['negative_threshold']
+        self.reg_weight        = conf_RPN['regression_weight']
+        self.nms_thres         = conf_RPN['nms_threshold']
+        self.sampling_number   = conf_RPN['sampling_number']
+        self.positive_fraction = conf_RPN['positive_fraction']
+        self.pre_k             = conf_RPN['pre_nms_top_k']
+        self.post_k            = conf_RPN['post_nms_top_k']
 
         self.feature_size = feature_size
         self.image_size = conf_RPN['input_size']
@@ -55,7 +54,7 @@ class RPN(nn.Module):
         self._set_criterion()
 
     def _set_criterion(self):
-        self.rpn_objectness_criterion = nn.BCELoss(reduction='sum') # log loss
+        self.rpn_objectness_criterion = nn.BCELoss(reduction='mean') # log loss
         self.rpn_regression_criterion = nn.SmoothL1Loss(reduction='sum') # robust loss
 
     def forward(self, features, data, mode):
@@ -66,20 +65,17 @@ class RPN(nn.Module):
         losses = dict()
 
         if mode == 'train':
-            # preparing loss
-            RPN_normalizer = data['bbox'].size()[0] * self.sample_number
-
-            # anchor labeling {origin_anchors, objectnesses, bbox_deltas, anchor_label, closest_gt}
+            # anchor labeling
             anchor_label, closest_gt = anchor_labeling_per_batch(origin_anchors, data['bbox'], self.pos_thres, self.neg_thres)
 
             # objectness loss
             selected_cls_out, label = self.get_cls_output_target(objectnesses, anchor_label)
-            losses['rpn_obj'] = self.rpn_objectness_criterion(selected_cls_out, label) / RPN_normalizer
+            losses['rpn_obj'] = self.rpn_objectness_criterion(selected_cls_out, label)
 
             # bbox regression loss
             if closest_gt.size()[0] != 0:
                 predicted_t, calculated_t = self.get_box_output_target(data['bbox'], origin_anchors, bbox_deltas, anchor_label, closest_gt)
-                losses['rpn_reg'] = self.rpn_regression_criterion(predicted_t, calculated_t) / RPN_normalizer
+                losses['rpn_reg'] = self.rpn_regression_criterion(predicted_t, calculated_t)
             else:
                 losses['rpn_reg'] = data['bbox'].new_zeros(())
 
@@ -122,34 +118,25 @@ class RPN(nn.Module):
             training_cls_score (Tensor) : [B, sampling_number]
             training_cls_gt : [B, sampling_number]
         '''
-        batch_size, _, _ = cls_score.size()
+        batch_size = cls_score.size()[0]
 
         training_cls_score_list = []
-        training_cls_gt_list = []
+        training_cls_gt_list    = []
 
+        # for each batch
         for b_idx in range(batch_size):
-            pos_cls_out, neg_cls_out = cls_score[b_idx][anchor_label[b_idx] > 0.1], cls_score[b_idx][anchor_label[b_idx] < -0.1] # [P], [N]
+            # gather objectness
+            pos_cls_out, neg_cls_out = cls_score[b_idx][anchor_label[b_idx] > 0], cls_score[b_idx][anchor_label[b_idx] < 0] # [P], [N]
             pos_num,     neg_num     = pos_cls_out.size()[0],                     neg_cls_out.size()[0]
 
             # random sampling
-            pivot = int(self.sample_number/2)
-            if pos_num <= pivot:
-                #pos_copy_num = int(pivot/pos_num)
+            pivot = int(self.sampling_number * self.positive_fraction)
+            sampled_pos_num = min(pivot, pos_num)
+            sampled_neg_num = self.sampling_number - sampled_pos_num
+            sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:sampled_pos_num]]
+            sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampled_neg_num]]
 
-                sampled_pos_num = pos_num # * pos_copy_num
-                sampled_neg_num = self.sample_number - sampled_pos_num
-
-                #sampled_pos_cls_out = torch.cat([pos_cls_out]*pos_copy_num)
-                sampled_pos_cls_out = pos_cls_out
-                sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampled_neg_num]]
-                
-            else:
-                sampled_pos_num = pivot
-                sampled_neg_num = self.sample_number - sampled_pos_num
-
-                sampled_pos_cls_out = pos_cls_out[torch.randperm(pos_num)[:sampled_pos_num]]
-                sampled_neg_cls_out = neg_cls_out[torch.randperm(neg_num)[:sampled_neg_num]]
-
+            # training samples concatnate
             one_cls_score = torch.cat([sampled_pos_cls_out, sampled_neg_cls_out]).squeeze(-1)
             one_cls_gt = torch.cat([pos_cls_out.new_ones((sampled_pos_num)), pos_cls_out.new_zeros((sampled_neg_num))])
 
@@ -171,12 +158,12 @@ class RPN(nn.Module):
             calculated_t : Tensor[P, 4]
         '''
         # calculate target regression parameter
-        positive_anchors = origin_anchors[anchor_label>0.1] # [P, 4]
+        positive_anchors = origin_anchors[anchor_label>0] # [P, 4]
         positive_gt = torch.stack([gt_bbox[batch_num][gt_num] for batch_num, gt_num in closest_gt]) # [P, 4]
         calculated_t = calculate_regression_parameter(positive_anchors, positive_gt, self.reg_weight) # [P, 4]
 
         # reshape output regression prediction
-        predicted_t = bbox_pred[anchor_label>0.1] # [P, 4]
+        predicted_t = bbox_pred[anchor_label>0] # [P, 4]
 
         return predicted_t, calculated_t
 

@@ -1,6 +1,7 @@
 model:
   backbone:
     backbone_type: R50
+
   RPN:
     anchor_size: [512, 256, 128, 64, 32]
     anchor_ratio: [0.5, 1.0, 2.0]
@@ -10,13 +11,19 @@ model:
     negative_threshold: 0.3
     regression_weight: [1, 1, 1, 1]
     nms_threshold: 0.7
-    RPN_sample_number: 256
+    sampling_number: 256
+    positive_fraction: 0.5
 
     pre_nms_top_k: 12000
-    post_nms_top_k: 2000
-
-    proposal_threshold: 0.7
-    proposla_nms_threshold: 0.5
+    post_nms_top_k: 1000
+    
+  box_head:
+    fc_channel: 256
+    roi_resolution: 7
+    regression_weight: [1, 1, 1, 1]
+    labeling_threshold: 0.5
+    sampling_number: 512
+    positive_fraction: 0.25
 
 _TRAIN_: ./training_cfg.yaml
   
