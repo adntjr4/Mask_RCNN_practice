@@ -30,8 +30,11 @@ class BoxHead(nn.Module):
         # init network
         self.roi_align = RoIAlign(self.roi_resolution, 1.0, -1, aligned=True)
 
-        self.fc1 = nn.Linear(self.rpn_channel * self.roi_resolution * self.roi_resolution, self.fc_channel)
-        self.fc2 = nn.Linear(self.fc_channel, self.fc_channel)
+        self.conv11_1 = nn.Conv2d(self.rpn_channel   , self.rpn_channel//4, kernel_size=1, stride=1, bias=False)
+        self.conv33   = nn.Conv2d(self.rpn_channel//4, self.rpn_channel//4, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv11_2 = nn.Conv2d(self.rpn_channel//4, self.rpn_channel   , kernel_size=1, stride=1, bias=False)
+
+        self.fc = nn.Linear(self.rpn_channel * self.roi_resolution * self.roi_resolution, self.fc_channel)
         self.obj_fc = nn.Linear(self.fc_channel, 1)
         self.reg_fc = nn.Linear(self.fc_channel, 4)
 
@@ -63,14 +66,21 @@ class BoxHead(nn.Module):
             # roi align
             roi = self.roi_align(feature_map[0], [bboxes for bboxes in proposals])
 
+        # res5
+        residual = roi
+        layer_output = F.relu_(self.conv11_1(roi))
+        layer_output = F.relu_(self.conv33(layer_output))
+        layer_output = self.conv11_2(layer_output)
+        layer_output += residual
+        layer_output = F.relu_(layer_output)
+
         # reshape
-        batch_size = proposals.size()[0]
-        _, C, PH, PW = roi.size()
-        reshaped_roi = roi.view(batch_size, -1, C*PH*PW)
+        B = proposals.size()[0]
+        _, C, PH, PW = layer_output.size()
+        reshaped_roi = layer_output.view(B, -1, C*PH*PW)
 
         # forward
-        layer_out = F.relu(self.fc1(reshaped_roi))
-        layer_out = F.relu(self.fc2(layer_out))
+        layer_out = F.relu_(self.fc(reshaped_roi))
         
         objectnesses = torch.sigmoid(self.obj_fc(layer_out))
         bbox_deltas = self.reg_fc(layer_out)
