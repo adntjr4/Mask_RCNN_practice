@@ -9,6 +9,7 @@ from src.model.anchor_func import ( generate_anchor_form,
                                     anchor_preprocessing,
                                     anchor_labeling_per_batch,
                                     anchor_labeling_no_gt,
+                                    invaild_bbox_cliping_per_batch,
                                     calculate_regression_parameter,
                                     reshape_output,
                                     nms_per_batch,
@@ -81,6 +82,9 @@ class RPN(nn.Module):
 
         # bbox regression
         proposals = box_regression(origin_anchors, bbox_deltas, self.reg_weight)
+
+        # invaild bbox clipping
+        invaild_bbox_cliping_per_batch(proposals, data['img_size'])
 
         return proposals, losses
 

@@ -29,6 +29,43 @@ def draw_boxes(img, boxes, color=(0,255,0)):
 
     return img
 
+def transform_xywh_with_img_id(xywh, img_id_map, inv_trans, img_id):
+    '''
+    Args:
+        xywh (Tensor) : [N, 4]
+        img_id_map (Tensor) : [N]
+        inv_trans (Tensor) : [B, 2, 3]
+        img_id (Tensor) : [B]
+    Returns:
+        tranformed_xywh (Tensor) : [N, 4]
+    '''
+    N = xywh.size()[0]
+
+    # matching inverse transforms for each xywh
+    # (couldn't think the way with gpu tensor)
+    matching_batch = xywh.new_zeros(N).type(torch.int64)
+    for batch_idx, one_img_id in enumerate(img_id):
+        matching_batch[matching_batch==one_img_id] = batch_idx
+    matching_batch = matching_batch.repeat(2,3,1).permute(2,0,1)
+
+    matching_inv_trans = torch.gather(input=inv_trans, dim=0, index=matching_batch)
+
+    # inverse transfomation
+    
+    xy, wh = xywh[:, 0:2], xywh[:, 2:4] # [N,2]
+    ones = xywh.new_ones((N, 1)) # [N,1]
+
+    xy0 = torch.matmul(matching_inv_trans, torch.cat([xy   , ones], dim=1).unsqueeze(2)).squeeze(2) # [N,2,3]x[N,3,1] = [N,2,1] -> [N,2]
+    xy1 = torch.matmul(matching_inv_trans, torch.cat([xy+wh, ones], dim=1).unsqueeze(2)).squeeze(2) # [N,2,3]x[N,3,1] = [N,2,1] -> [N,2]
+
+    stack_xy = torch.stack([xy0, xy1]) # [N,2,2]
+    max_xy, _ = torch.max(stack_xy, dim=2)
+    min_xy, _ = torch.min(stack_xy, dim=2)
+
+    transformed_wh = max_xy - min_xy
+
+    return torch.cat([min_xy, transformed_wh], dim=1)
+
 def transform_xywh(xywh, trans):
     '''
     Args:
@@ -38,12 +75,12 @@ def transform_xywh(xywh, trans):
         tranformed_xywh (np.array) : [N, 4]
     '''
     if len(xywh) != 0:
-        xywh = np.array(xywh).transpose(1,0)
-        xy, wh = xywh[0:2,:], xywh[2:4,:]
+        xywh = np.array(xywh).transpose(1,0) # [4,N]
+        xy, wh = xywh[0:2,:], xywh[2:4,:] # [2,N]
 
-        ones = np.ones((1, xy.shape[1]))
+        ones = np.ones((1, xy.shape[1])) # [1,N]
 
-        xy0 = np.dot(trans, np.concatenate((xy, ones))).transpose(1,0)
+        xy0 = np.dot(trans, np.concatenate((xy, ones))).transpose(1,0)      # [2,3]x[3,N] = [2,N] -> [N,2]
         xy1 = np.dot(trans, np.concatenate((xy+wh, ones))).transpose(1,0)
 
         max_xy = np.max(np.stack((xy0, xy1)), axis=0)

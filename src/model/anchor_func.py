@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from src.util.util import IoU
 
-
+@torch.no_grad()
 def generate_anchor_form(anchor, feature_size, image_size):
     '''
     generate anchors before doing box regression
@@ -61,7 +61,7 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
         post_keep_map  (Tensor) : [B, A]
     '''
     # for each feature level do {pre-nms-top-k, nms}
-    origin_anchors, concat_anchors, concat_cls_score = [], [], []
+    origin_anchors, concat_cls_score = [], []
     concat_bbox_pred, concat_keep_map = [], []
     for lvl_anchors, lvl_cls_score, lvl_bbox_pred in zip(anchors, cls_score, bbox_pred):
         # reshape
@@ -207,6 +207,7 @@ def sort_per_batch(cls_score):
     _, indices = torch.sort(cls_score, dim=len(cls_score.size())-2, descending=True)
     return indices
 
+@torch.no_grad()
 def invaild_bbox_cliping_per_batch(anchors, image_size):
     '''
     remove invaild bboxes per batch (e.g. outside image)
@@ -214,18 +215,14 @@ def invaild_bbox_cliping_per_batch(anchors, image_size):
         anchors (Tensor) : [B, A, 4]
         image_size (Tensor) : [B, 2]
     '''
-    batch_size, _ = image_size.size()
-    for batch_idx in range(batch_size):
-        H, W = image_size[batch_idx][0], image_size[batch_idx][1]
-        x,y,w,h = anchors[batch_idx].split(1, dim=1)
-        w += x
-        h += y
-        x.clamp_(min=0)
-        y.clamp_(min=0)
-        w.clamp_(max=W)
-        h.clamp_(max=H)
-        w -= x
-        h -= y
+    H, W = image_size[:,0], image_size[:,1] # [B], [B]
+    x, y, w, h = anchors.split(1, dim=2)    # [B, A, 1]
+    w += x
+    h += y
+    x.clamp_(min=0)
+    y.clamp_(min=0)
+    w[:,:,:] = torch.stack([torch.where(w[idx] > one_W, one_W, w[idx]) - x[idx] for idx, one_W in enumerate(W)])
+    h[:,:,:] = torch.stack([torch.where(h[idx] > one_H, one_H, h[idx]) - y[idx] for idx, one_H in enumerate(H)])
 
 def remove_invaild_bbox_per_batch(anchors, image_size):
     '''
@@ -263,6 +260,7 @@ def remove_invaild_bbox(anchors, image_size):
     vaild_map = torch.logical_and(torch.logical_and(left, up), torch.logical_and(right, down)).squeeze(1)
     return vaild_map
 
+@torch.no_grad()
 def nms_made(bbox, score, threshold):
     '''
     non-maximum suppression
@@ -298,6 +296,7 @@ def nms_made(bbox, score, threshold):
 
         return keep_map
 
+@torch.no_grad()
 def nms_per_batch(bbox, score, threshold):
     '''
     non-maximum suppression
@@ -338,11 +337,12 @@ def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres:float, neg_thres:float,
     batch_size, object_num, _ = gt_bbox.size()
 
     # expand anchor and gt_bbox for cross IoU calculation
-    expanded_anchor = anchor.repeat(object_num,1,1,1).permute(1,0,2,3)   # [B, A, 4] -> [N, B, A, 4] -> [B, N, A, 4]
-    expanded_gt_bbox = gt_bbox.repeat(anchor_num,1,1,1).permute(1,2,0,3) # [B, N, 4] -> [A, B, N, 4] -> [B, N, A, 4]
+    expanded_anchor  = anchor.unsqueeze(0).expand(object_num,-1,-1,-1).permute(1,0,2,3)   # [B, A, 4] -> [N, B, A, 4] -> [B, N, A, 4]
+    expanded_gt_bbox = gt_bbox.unsqueeze(0).expand(anchor_num,-1,-1,-1).permute(1,2,0,3) # [B, N, 4] -> [A, B, N, 4] -> [B, N, A, 4]
 
     # IoU calculation
     cross_IoU = IoU(expanded_anchor, expanded_gt_bbox) # [B, N, A]
+    del expanded_anchor, expanded_gt_bbox
 
     # label positive and negative
     anchor_pos_label = (cross_IoU > pos_thres).any(1)                    # [B, A]

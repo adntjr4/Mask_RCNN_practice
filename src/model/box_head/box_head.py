@@ -6,6 +6,9 @@ import torch.nn.functional as F
 from torchvision.ops import RoIAlign
 
 from src.model.anchor_func import ( anchor_labeling_per_batch,
+                                    box_regression,
+                                    nms_per_batch,
+                                    invaild_bbox_cliping_per_batch,
                                     calculate_regression_parameter )
 
 
@@ -23,6 +26,8 @@ class BoxHead(nn.Module):
         self.label_thres        = conf_box['labeling_threshold']
         self.sampling_number    = conf_box['sampling_number']
         self.positive_fraction  = conf_box['positive_fraction']
+        self.test_score_thres   = conf_box['test_score_threshold']
+        self.test_nms_thres     = conf_box['test_nms_threshold']
 
         # set criterion
         self._set_criterion()
@@ -30,9 +35,7 @@ class BoxHead(nn.Module):
         # init network
         self.roi_align = RoIAlign(self.roi_resolution, 1.0, -1, aligned=True)
 
-        self.conv11_1 = nn.Conv2d(self.rpn_channel   , self.rpn_channel//4, kernel_size=1, stride=1, bias=False)
-        self.conv33   = nn.Conv2d(self.rpn_channel//4, self.rpn_channel//4, kernel_size=3, stride=1, padding=1, bias=False)
-        self.conv11_2 = nn.Conv2d(self.rpn_channel//4, self.rpn_channel   , kernel_size=1, stride=1, bias=False)
+        self.res5 = Res5(self.rpn_channel)
 
         self.fc = nn.Linear(self.rpn_channel * self.roi_resolution * self.roi_resolution, self.fc_channel)
         self.obj_fc = nn.Linear(self.fc_channel, 1)
@@ -41,6 +44,18 @@ class BoxHead(nn.Module):
     def _set_criterion(self):
         self.box_objectness_criterion = nn.BCELoss(reduction='mean')
         self.box_regression_criterion = nn.SmoothL1Loss(reduction='sum')
+
+    def roi_head_layer_forward(self, roi, batch_size):
+        res5_output = self.res5(roi)
+        _, C, PH, PW = res5_output.size()
+        reshaped_roi = res5_output.view(batch_size, -1, C*PH*PW)
+
+        layer_out = F.relu_(self.fc(reshaped_roi))
+        
+        objectnesses = torch.sigmoid(self.obj_fc(layer_out))
+        bbox_deltas = self.reg_fc(layer_out)
+
+        return objectnesses, bbox_deltas
 
     def forward(self, feature_map, proposals, data, mode):
         '''
@@ -56,6 +71,10 @@ class BoxHead(nn.Module):
             scores (Tensor)     : [N]
             img_id_map (Tensor) : [N]
         '''
+        # detectron2 heuristic method (adding gt bbox)
+        proposals = torch.cat([proposals, data['bbox']], dim=1)
+        batch_size = proposals.size()[0]
+
         # FPN
         if self.FPN_mode:
             # mapping
@@ -65,25 +84,9 @@ class BoxHead(nn.Module):
         else:
             # roi align
             roi = self.roi_align(feature_map[0], [bboxes for bboxes in proposals])
-
-        # res5
-        residual = roi
-        layer_output = F.relu_(self.conv11_1(roi))
-        layer_output = F.relu_(self.conv33(layer_output))
-        layer_output = self.conv11_2(layer_output)
-        layer_output += residual
-        layer_output = F.relu_(layer_output)
-
-        # reshape
-        B = proposals.size()[0]
-        _, C, PH, PW = layer_output.size()
-        reshaped_roi = layer_output.view(B, -1, C*PH*PW)
-
-        # forward
-        layer_out = F.relu_(self.fc(reshaped_roi))
         
-        objectnesses = torch.sigmoid(self.obj_fc(layer_out))
-        bbox_deltas = self.reg_fc(layer_out)
+        # layer forward and get objectnesses, deltas
+        objectnesses, bbox_deltas = self.roi_head_layer_forward(roi, batch_size)
 
         losses = dict()
         if mode == 'train':
@@ -103,18 +106,22 @@ class BoxHead(nn.Module):
 
             return losses
         else:
-            # 여기는 rpn에서 쓰던 함수 붙여오기 threshold 사용하는 버젼이랑 top N 버젼
-            # 근데 생각해보니 threshold랑 top N 할 필요 없이 pre thres가 있으니까 nms하고 뽑으면 될듯.
-
-            # pre threshold
-
             # bbox regression
+            bboxes = box_regression(proposals, bbox_deltas, self.reg_weight)
 
             # bbox clipping
+            invaild_bbox_cliping_per_batch(bboxes, data['img_size'])
 
             # nms
+            nms_keep = nms_per_batch(bboxes, objectnesses, self.test_nms_thres)
 
-            return detections
+            # pre threshold
+            threshold_mask = torch.logical_and(objectnesses.squeeze(2) > self.test_score_thres, nms_keep)
+
+            # corresponding image id
+            img_id_map = torch.cat([one_id.repeat(threshold_mask[batch_idx].sum()) for batch_idx, one_id in enumerate(data['img_id'])])
+
+            return bboxes[threshold_mask], objectnesses[threshold_mask], img_id_map
 
     def get_cls_output_target(self, objectness, proposals_label):
         '''
@@ -174,3 +181,18 @@ class BoxHead(nn.Module):
         predicted_t = bbox_deltas[proposals_label > 0] # [P, 4]
 
         return predicted_t, calculated_t
+
+class Res5(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self.conv11_1 = nn.Conv2d(channel   , channel//4, kernel_size=1, stride=1, bias=False)
+        self.conv33   = nn.Conv2d(channel//4, channel//4, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv11_2 = nn.Conv2d(channel//4, channel   , kernel_size=1, stride=1, bias=False)
+
+    def forward(self, x):
+        residual = x
+        x = F.relu_(self.conv11_1(x))
+        x = F.relu_(self.conv33(x))
+        x = self.conv11_2(x)
+        x += residual
+        return F.relu_(x)

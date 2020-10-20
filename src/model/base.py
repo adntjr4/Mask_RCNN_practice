@@ -8,7 +8,7 @@ from src.model.backbone.fpn import FPN
 from src.model.rpn.rpn import RPN
 from src.model.rpn.rpn_head import RPNHead
 from src.model.box_head.box_head import BoxHead
-from src.util.util import transform_xywh
+from src.util.util import transform_xywh_with_img_id
 
 
 class BaseModel(nn.Module):
@@ -55,15 +55,16 @@ class BaseModel(nn.Module):
         '''
         feature_map = self.backbone(data['img'])
 
+        proposals, rpn_losses = self.RPN(feature_map, data, mode)
+
         # training mode (return losses)
         if mode == 'train':
             losses = dict()
 
-            # RPN
-            proposals, rpn_losses = self.RPN(feature_map, data, mode)
+            # RPN loss update
             losses.update(rpn_losses)
 
-            # RoI head
+            # RoI head forward
             box_head_losses = self.box_head(feature_map, proposals, data, mode)
             losses.update(box_head_losses)
 
@@ -71,19 +72,11 @@ class BaseModel(nn.Module):
 
         # evaluation mode (return bboxes, scores ...)
         else:
-            # RPN
-            proposals = self.RPN(feature_map, data, mode)
-
-            # RoI head
-            # bboxes, scores, img_id_map = 여기에 RoI head 넣기
+            # RoI head forward
+            bboxes, scores, img_id_map = self.box_head(feature_map, proposals, data, mode)
 
             # transform anchors into original image space 
-            # (currently all transformation is done on cpu TODO: transforming with GPU Tensor)
-            bboxes_list = []
-            for idx in range(len(data['img_id'])):
-                transfromed_xywh = transform_xywh(bboxes[idx].cpu(), np.array(data['inv_trans'][idx].cpu()))
-                bboxes_list.append(scores.new(transfromed_xywh))
-            bboxes = torch.cat(bboxes_list)
+            bboxes = transform_xywh_with_img_id(bboxes, img_id_map, data['inv_trans'], data['img_id']).cpu()
 
             return bboxes, scores, img_id_map
 

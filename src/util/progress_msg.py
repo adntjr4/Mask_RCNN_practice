@@ -57,7 +57,6 @@ class ProgressMsg():
             elapsed_str = str(datetime.timedelta(seconds=int(elapsed)))
             txt = '>>> progress : %.2f%%, elapsed: %s, remaining: %s, total: %s \t\t\t\t\t' % (pg_per, elapsed_str, 'INF', 'INF')
 
-        
         print(txt, end='\r')
 
         return txt.replace('\t', '')

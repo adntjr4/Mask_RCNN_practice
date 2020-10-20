@@ -8,6 +8,7 @@ from torch.nn import DataParallel
 
 from src.util.timer import Timer
 from src.util.progress_msg import ProgressMsg
+from src.util.logger import Logger
 
 
 class Trainer:
@@ -33,9 +34,10 @@ class Trainer:
 
         self.timer = Timer()
 
+        #self.logger = Logger()
         self.progress_msg = ProgressMsg((self.max_epoch, len(self.data_loader)))
 
-        self.log_out_iter = 10
+        self.log_out_iter = 1
         
     def train(self):
         self.model.train()
