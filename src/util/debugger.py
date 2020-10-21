@@ -1,5 +1,6 @@
 
 import cv2
+import torch
 
 from .util import img_process, draw_boxes
 
@@ -34,3 +35,9 @@ def debug_draw_bbox3_cv_img(img, bbox1, bbox2, bbox3, name):
     boxed_img = draw_boxes(boxed_img, bbox2, (0,0,255))
     boxed_img = draw_boxes(boxed_img, bbox3, (255,0,0))
     cv2.imwrite('data/tmp/%s.jpg'%name, boxed_img)
+
+def debug_imwrite(img, name):
+    if type(img) == torch.Tensor:
+        img = img.cpu()
+        img = img.permute(1,2,0).numpy()[:,:,[2,1,0]]
+    cv2.imwrite('data/tmp/%s.jpg'%name, img)

@@ -30,15 +30,15 @@ class BaseModel(nn.Module):
             self.backbone = BackBone(self.conf_backbone)
 
     def _build_RPN(self):
-        input_size = self.conf_backbone['input_size']
         self.RPN = RPN( 'FPN' in self.conf_backbone,
                         self.backbone.get_feature_channel(), 
-                        self.backbone.get_feature_size(input_size),
+                        self.backbone.get_feature_size(self.conf_backbone['input_size']),
                         self.conf_RPN)
 
     def _build_box_head(self):
         self.box_head = BoxHead('FPN' in self.conf_backbone,
                                 self.backbone.get_feature_channel(),
+                                self.conf_backbone['input_size'],
                                 self.conf_box)
 
     def forward(self, data, mode):

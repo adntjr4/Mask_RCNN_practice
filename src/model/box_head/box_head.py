@@ -13,12 +13,13 @@ from src.model.anchor_func import ( anchor_labeling_per_batch,
 
 
 class BoxHead(nn.Module):
-    def __init__(self, FPN_mode, rpn_channel, conf_box):
+    def __init__(self, FPN_mode, rpn_channel, input_img_size, conf_box):
         super().__init__()
 
         # configs
-        self.FPN_mode = FPN_mode
-        self.rpn_channel = rpn_channel
+        self.FPN_mode           = FPN_mode
+        self.rpn_channel        = rpn_channel
+        self.input_img_size     = input_img_size
 
         self.fc_channel         = conf_box['fc_channel']
         self.roi_resolution     = conf_box['roi_resolution']
@@ -73,18 +74,23 @@ class BoxHead(nn.Module):
         '''
         # detectron2 heuristic method (adding gt bbox)
         proposals = torch.cat([proposals, data['bbox']], dim=1)
-        batch_size = proposals.size()[0]
+        batch_size, _, H, W = feature_map[0].size()
+
+        # mapping (also xywh -> xyxy for using torchvision's roi_align function)
+        x, y, w, h = proposals.split(1, dim=2)
+        x_ratio = self.input_img_size[1] / W
+        y_ratio = self.input_img_size[0] / H
+        mapping_proposals = torch.cat([x/x_ratio, y/y_ratio, (x+w)/x_ratio, (y+h)/y_ratio], dim=2)
 
         # FPN
         if self.FPN_mode:
-            # mapping
             # roi align
             raise NotImplementedError
         # resnet
         else:
             # roi align
-            roi = self.roi_align(feature_map[0], [bboxes for bboxes in proposals])
-        
+            roi = self.roi_align(feature_map[0], [bboxes for bboxes in mapping_proposals])
+
         # layer forward and get objectnesses, deltas
         objectnesses, bbox_deltas = self.roi_head_layer_forward(roi, batch_size)
 

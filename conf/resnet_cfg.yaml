@@ -24,7 +24,7 @@ model:
     labeling_threshold: 0.5
     sampling_number: 512
     positive_fraction: 0.25
-    test_score_threshold: 0.05
+    test_score_threshold: 0.5
     test_nms_threshold: 0.5
 
 _TRAIN_: ./training_cfg.yaml

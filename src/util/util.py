@@ -58,9 +58,9 @@ def transform_xywh_with_img_id(xywh, img_id_map, inv_trans, img_id):
     xy0 = torch.matmul(matching_inv_trans, torch.cat([xy   , ones], dim=1).unsqueeze(2)).squeeze(2) # [N,2,3]x[N,3,1] = [N,2,1] -> [N,2]
     xy1 = torch.matmul(matching_inv_trans, torch.cat([xy+wh, ones], dim=1).unsqueeze(2)).squeeze(2) # [N,2,3]x[N,3,1] = [N,2,1] -> [N,2]
 
-    stack_xy = torch.stack([xy0, xy1]) # [N,2,2]
-    max_xy, _ = torch.max(stack_xy, dim=2)
-    min_xy, _ = torch.min(stack_xy, dim=2)
+    stack_xy = torch.stack([xy0, xy1]) # [2,N,2]
+    max_xy, _ = torch.max(stack_xy, dim=0) # [N,2]
+    min_xy, _ = torch.min(stack_xy, dim=0) # [N,2]
 
     transformed_wh = max_xy - min_xy
 
@@ -146,6 +146,7 @@ def get_trans_matrix(size, dst_size, hor_flip=False):
 
     return cv2.getAffineTransform(src, dst), cv2.getAffineTransform(dst, src)
 
+@torch.no_grad()
 def IoU(xywh0:torch.Tensor, xywh1:torch.Tensor):
     '''
     calculate IoUs using tensor
@@ -155,21 +156,20 @@ def IoU(xywh0:torch.Tensor, xywh1:torch.Tensor):
     Returns:
         IoUs (Tensor) : [...]
     '''
-    with torch.no_grad():
-        assert xywh0.size() == xywh1.size(), 'for calculate IoU, size of two tensor must be same.'
+    assert xywh0.size() == xywh1.size(), 'for calculate IoU, size of two tensor must be same.'
 
-        x0, y0, w0, h0 = xywh0.split(1, dim = len(xywh0.size())-1)
-        x1, y1, w1, h1 = xywh1.split(1, dim = len(xywh0.size())-1)
+    x0, y0, w0, h0 = xywh0.split(1, dim = len(xywh0.size())-1)
+    x1, y1, w1, h1 = xywh1.split(1, dim = len(xywh0.size())-1)
 
-        x0_, y0_ = x0+w0, y0+h0
-        x1_, y1_ = x1+w1, y1+h1
-        
-        U_x, U_y, U_x_, U_y_ =  torch.max(x0, x1),   \
-                                torch.max(y0, y1),   \
-                                torch.min(x0_, x1_), \
-                                torch.min(y0_, y1_)
+    x0_, y0_ = x0+w0, y0+h0
+    x1_, y1_ = x1+w1, y1+h1
+    
+    U_x, U_y, U_x_, U_y_ =  torch.max(x0, x1),   \
+                            torch.max(y0, y1),   \
+                            torch.min(x0_, x1_), \
+                            torch.min(y0_, y1_)
 
-        inter_area = (U_x_-U_x).clamp(min=0.) * (U_y_-U_y).clamp(min=0.)
-        union_area = w0*h0 + w1*h1 - inter_area
+    inter_area = (U_x_-U_x).clamp(min=0.) * (U_y_-U_y).clamp(min=0.)
+    union_area = w0*h0 + w1*h1 - inter_area
 
-        return (inter_area / union_area).squeeze(-1)
+    return (inter_area / union_area).squeeze(-1)
