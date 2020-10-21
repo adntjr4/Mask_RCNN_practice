@@ -215,14 +215,17 @@ def invaild_bbox_cliping_per_batch(anchors, image_size):
         anchors (Tensor) : [B, A, 4]
         image_size (Tensor) : [B, 2]
     '''
-    H, W = image_size[:,0], image_size[:,1] # [B], [B]
-    x, y, w, h = anchors.split(1, dim=2)    # [B, A, 1]
-    w += x
-    h += y
-    x.clamp_(min=0)
-    y.clamp_(min=0)
-    w[:,:,:] = torch.stack([torch.where(w[idx] > one_W, one_W, w[idx]) - x[idx] for idx, one_W in enumerate(W)])
-    h[:,:,:] = torch.stack([torch.where(h[idx] > one_H, one_H, h[idx]) - y[idx] for idx, one_H in enumerate(H)])
+    for anchor, one_img_size in zip(anchors, image_size):
+        H, W = one_img_size[0], one_img_size[1]
+        x, y, w, h = anchor.split(1, dim=1)
+        w += x
+        h += y
+        x.clamp_(min=0, max=W)
+        y.clamp_(min=0, max=H)
+        w.clamp_(min=0, max=W)
+        h.clamp_(min=0, max=H)
+        w -= x
+        h -= y
 
 def remove_invaild_bbox_per_batch(anchors, image_size):
     '''
@@ -344,9 +347,12 @@ def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres:float, neg_thres:float,
     cross_IoU = IoU(expanded_anchor, expanded_gt_bbox) # [B, N, A]
     del expanded_anchor, expanded_gt_bbox
 
-    # label positive and negative
+    # label positive and negative (zero box will be ignored)
     anchor_pos_label = (cross_IoU > pos_thres).any(1)                    # [B, A]
     anchor_neg_label = torch.logical_not((cross_IoU > neg_thres).any(1)) # [B, A]
+    non_zero_w_label = anchor[:,:,2] > 0 # [B,A]
+    non_zero_h_label = anchor[:,:,3] > 0 # [B,A]
+    anchor_neg_label = torch.logical_and(torch.logical_and(anchor_neg_label, non_zero_h_label), non_zero_w_label)
 
     # find closest anchor for each gt_bbox
     if closest:

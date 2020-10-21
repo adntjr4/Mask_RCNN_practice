@@ -73,7 +73,8 @@ class BoxHead(nn.Module):
             img_id_map (Tensor) : [N]
         '''
         # detectron2 heuristic method (adding gt bbox)
-        proposals = torch.cat([proposals, data['bbox']], dim=1)
+        if mode == 'train':
+            proposals = torch.cat([proposals, data['bbox']], dim=1)
         batch_size, _, H, W = feature_map[0].size()
 
         # mapping (also xywh -> xyxy for using torchvision's roi_align function)
