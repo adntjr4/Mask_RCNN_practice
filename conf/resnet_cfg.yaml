@@ -14,10 +14,11 @@ model:
     sampling_number: 256
     positive_fraction: 0.5
 
-    pre_nms_top_k: 12000
-    post_nms_top_k: 1024
+    pre_nms_top_k: 16000
+    post_nms_top_k: 2000
     
   box_head:
+    conv_channel: 256
     fc_channel: 1024
     roi_resolution: 7
     regression_weight: [1, 1, 1, 1]

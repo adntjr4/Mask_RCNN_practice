@@ -104,6 +104,7 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
 
     return post_origin_anchors, post_cls_score, post_bbox_pred
 
+@torch.no_grad()
 def box_regression(bbox, variables, weight):
     '''
     Args:
@@ -345,7 +346,6 @@ def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres:float, neg_thres:float,
 
     # IoU calculation
     cross_IoU = IoU(expanded_anchor, expanded_gt_bbox) # [B, N, A]
-    del expanded_anchor, expanded_gt_bbox
 
     # label positive and negative (zero box will be ignored)
     anchor_pos_label = (cross_IoU > pos_thres).any(1)                    # [B, A]
@@ -370,9 +370,12 @@ def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres:float, neg_thres:float,
     closest_gt = torch.stack([closest_gt_batch, closest_gt_object], dim=1) # [P, 2]
 
     # merge anchor label
-    anchor_label = anchor_pos_label * 1.0 # [B, A]
-    anchor_label -= anchor_neg_label * 1.0 # [B, A]
-    anchor_label += torch.logical_and(anchor_pos_label, anchor_neg_label) * 1.0 # [B, A]
+    anchor_label = anchor_neg_label * -1.0
+    anchor_label[anchor_pos_label] = 1.0
+
+    # anchor_label = anchor_pos_label * 1.0 # [B, A]
+    # anchor_label -= anchor_neg_label * 1.0 # [B, A]
+    # anchor_label += torch.logical_and(anchor_pos_label, anchor_neg_label) * 1.0 # [B, A]
 
     return anchor_label, closest_gt
 

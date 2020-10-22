@@ -22,7 +22,8 @@ class BackBone(nn.Module):
             param.requires_grad = False
         for param in self.model.layer1.parameters():
             param.requires_grad = False
-    
+        for param in self.model.layer2.parameters():
+            param.requires_grad = False
 
     def forward(self, x):
         x = self.model.conv1(x)
@@ -36,8 +37,7 @@ class BackBone(nn.Module):
         return [x]
 
     def get_parameters(self):
-        return  list(self.model.layer2.parameters()) + \
-                list(self.model.layer3.parameters()) + \
+        return  list(self.model.layer3.parameters()) + \
                 list(self.model.layer4.parameters())
 
     def get_feature_channel(self):

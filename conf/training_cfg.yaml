@@ -15,10 +15,10 @@ data_loader:
 
 train:
   RPN_objectness_loss_weight: 1
-  RPN_regression_loss_weight: 0.1
+  RPN_regression_loss_weight: 0.01
   box_objectness_loss_weight: 1
-  box_regression_loss_weight: 0.1
+  box_regression_loss_weight: 0.01
   max_epoch: 12
   optimizer: SGD
-  lr: 0.01
+  lr: 0.001
   checkpoint_dir: data/saved/checkpoint

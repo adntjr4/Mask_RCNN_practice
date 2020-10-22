@@ -61,7 +61,7 @@ class RPN(nn.Module):
     def forward(self, features, data, mode):
         rpn_out = self.rpn_head(features)
 
-        origin_anchors, objectnesses, bbox_deltas = self.anchor_preparing(data['img_size'], rpn_out['rpn_objectness'], rpn_out['rpn_bbox_delta'])
+        # origin_anchors, objectnesses, bbox_deltas = self.anchor_preparing(data['img_size'], rpn_out['rpn_objectness'], rpn_out['rpn_bbox_delta'])
 
         losses = dict()
 

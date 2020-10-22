@@ -21,6 +21,7 @@ class BoxHead(nn.Module):
         self.rpn_channel        = rpn_channel
         self.input_img_size     = input_img_size
 
+        self.conv_channel       = conf_box['conv_channel']
         self.fc_channel         = conf_box['fc_channel']
         self.roi_resolution     = conf_box['roi_resolution']
         self.reg_weight         = conf_box['regression_weight']
@@ -34,11 +35,14 @@ class BoxHead(nn.Module):
         self._set_criterion()
 
         # init network
-        self.roi_align = RoIAlign(self.roi_resolution, 1.0, -1, aligned=True)
+        self.roi_align = RoIAlign(self.roi_resolution, 1/32, 2, aligned=True)
 
-        self.res5 = Res5(self.rpn_channel)
+        # self.res5 = Res5(self.rpn_channel)
+        self.conv11 = nn.Conv2d(self.rpn_channel, self.conv_channel, kernel_size=1, stride=1)
+        self.conv33 = nn.Conv2d(self.conv_channel, self.conv_channel, kernel_size=3, stride=1, padding=1)
 
-        self.fc = nn.Linear(self.rpn_channel * self.roi_resolution * self.roi_resolution, self.fc_channel)
+        self.fc1 = nn.Linear(self.conv_channel * self.roi_resolution * self.roi_resolution, self.fc_channel)
+        self.fc2 = nn.Linear(self.fc_channel, self.fc_channel)
         self.obj_fc = nn.Linear(self.fc_channel, 1)
         self.reg_fc = nn.Linear(self.fc_channel, 4)
 
@@ -47,14 +51,16 @@ class BoxHead(nn.Module):
         self.box_regression_criterion = nn.SmoothL1Loss(reduction='sum')
 
     def roi_head_layer_forward(self, roi, batch_size):
-        res5_output = self.res5(roi)
-        _, C, PH, PW = res5_output.size()
-        reshaped_roi = res5_output.view(batch_size, -1, C*PH*PW)
+        layer_inter = F.relu_(self.conv11(roi))
+        layer_inter = F.relu_(self.conv33(layer_inter))
+        _, C, PH, PW = layer_inter.size()
+        layer_inter = layer_inter.view(batch_size, -1, C*PH*PW)
 
-        layer_out = F.relu_(self.fc(reshaped_roi))
+        layer_inter = F.relu_(self.fc1(layer_inter))
+        layer_inter = F.relu_(self.fc2(layer_inter))
         
-        objectnesses = torch.sigmoid(self.obj_fc(layer_out))
-        bbox_deltas = self.reg_fc(layer_out)
+        objectnesses = torch.sigmoid(self.obj_fc(layer_inter))
+        bbox_deltas = self.reg_fc(layer_inter)
 
         return objectnesses, bbox_deltas
 
@@ -77,11 +83,9 @@ class BoxHead(nn.Module):
             proposals = torch.cat([proposals, data['bbox']], dim=1)
         batch_size, _, H, W = feature_map[0].size()
 
-        # mapping (also xywh -> xyxy for using torchvision's roi_align function)
+        # xywh -> xyxy for using torchvision's roi_align function
         x, y, w, h = proposals.split(1, dim=2)
-        x_ratio = self.input_img_size[1] / W
-        y_ratio = self.input_img_size[0] / H
-        mapping_proposals = torch.cat([x/x_ratio, y/y_ratio, (x+w)/x_ratio, (y+h)/y_ratio], dim=2)
+        mapping_proposals = torch.cat([x, y, x+w, y+h], dim=2)
 
         # FPN
         if self.FPN_mode:
@@ -89,8 +93,8 @@ class BoxHead(nn.Module):
             raise NotImplementedError
         # resnet
         else:
-            # roi align
-            roi = self.roi_align(feature_map[0], [bboxes for bboxes in mapping_proposals])
+            # roi align [B*topk, C, H, W]
+            roi = self.roi_align(feature_map[0], [mapping_proposal for mapping_proposal in mapping_proposals])
 
         # layer forward and get objectnesses, deltas
         objectnesses, bbox_deltas = self.roi_head_layer_forward(roi, batch_size)
@@ -99,6 +103,20 @@ class BoxHead(nn.Module):
         if mode == 'train':
             # anchor labeling
             proposals_label, closest_gt = anchor_labeling_per_batch(proposals, data['bbox'], self.label_thres, self.label_thres, closest=False)
+
+            ########## DEBUG ################
+            # from src.util.debugger import debug_draw_bbox3_cv_img
+            # img0_gt = data['bbox'][0]
+            # img0_pos = proposals[0][proposals_label[0]>0]
+            # img0_neg = proposals[0][proposals_label[0]<0]
+
+            # img1_gt = data['bbox'][1]
+            # img1_pos = proposals[1][proposals_label[1]>0]
+            # img1_neg = proposals[1][proposals_label[1]<0]
+
+            # debug_draw_bbox3_cv_img(data['img'][0], img0_gt, img0_pos, img0_neg, 'img0')
+            # debug_draw_bbox3_cv_img(data['img'][1], img1_gt, img1_pos, img1_neg, 'img1')
+            #################################
 
             # objectness loss
             selected_cls_out, label = self.get_cls_output_target(objectnesses, proposals_label)
@@ -192,9 +210,9 @@ class BoxHead(nn.Module):
 class Res5(nn.Module):
     def __init__(self, channel):
         super().__init__()
-        self.conv11_1 = nn.Conv2d(channel   , channel//4, kernel_size=1, stride=1, bias=False)
-        self.conv33   = nn.Conv2d(channel//4, channel//4, kernel_size=3, stride=1, padding=1, bias=False)
-        self.conv11_2 = nn.Conv2d(channel//4, channel   , kernel_size=1, stride=1, bias=False)
+        self.conv11_1 = nn.Conv2d(channel   , channel//4, kernel_size=1)
+        self.conv33   = nn.Conv2d(channel//4, channel//4, kernel_size=3, padding=1)
+        self.conv11_2 = nn.Conv2d(channel//4, channel, kernel_size=1)
 
     def forward(self, x):
         residual = x
