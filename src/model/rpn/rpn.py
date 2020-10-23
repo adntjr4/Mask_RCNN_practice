@@ -10,6 +10,7 @@ from src.model.anchor_func import ( generate_anchor_form,
                                     anchor_labeling_per_batch,
                                     anchor_labeling_no_gt,
                                     invaild_bbox_cliping_per_batch,
+                                    reshape_output,
                                     calculate_regression_parameter,
                                     reshape_output,
                                     nms_per_batch,
@@ -61,55 +62,46 @@ class RPN(nn.Module):
     def forward(self, features, data, mode):
         rpn_out = self.rpn_head(features)
 
+        batch_size = features[0].size()[0]
+
         # origin_anchors, objectnesses, bbox_deltas = self.anchor_preparing(data['img_size'], rpn_out['rpn_objectness'], rpn_out['rpn_bbox_delta'])
+        origin_anchors = self.anchor_preparing(batch_size)
+        objectnesses = rpn_out['rpn_objectness']
+        bbox_deltas  = rpn_out['rpn_bbox_delta']
 
         losses = dict()
 
         if mode == 'train':
             # anchor labeling
-            anchor_label, closest_gt = anchor_labeling_per_batch(origin_anchors, data['bbox'], self.pos_thres, self.neg_thres)
+            anchor_label, closest_gt = anchor_labeling_per_batch(torch.cat(origin_anchors, dim=1), data['bbox'], self.pos_thres, self.neg_thres)
 
             # objectness loss
-            selected_cls_out, label = self.get_cls_output_target(objectnesses, anchor_label)
+            selected_cls_out, label = self.get_cls_output_target(reshape_output(objectnesses, 1), anchor_label)
             losses['rpn_obj'] = self.rpn_objectness_criterion(selected_cls_out, label)
 
             # bbox regression loss
             if closest_gt.size()[0] != 0:
-                predicted_t, calculated_t = self.get_box_output_target(data['bbox'], origin_anchors, bbox_deltas, anchor_label, closest_gt)
+                predicted_t, calculated_t = self.get_box_output_target(data['bbox'], torch.cat(origin_anchors, dim=1), reshape_output(bbox_deltas, 4), anchor_label, closest_gt)
                 losses['rpn_reg'] = self.rpn_regression_criterion(predicted_t, calculated_t)
             else:
                 losses['rpn_reg'] = data['bbox'].new_zeros(())
 
-        # bbox regression
-        proposals = box_regression(origin_anchors, bbox_deltas, self.reg_weight)
-
-        # invaild bbox clipping
-        invaild_bbox_cliping_per_batch(proposals, data['img_size'])
+        # anchor preprocessing (top_k, bbox regression, nms etc.)
+        proposals, _, _ = anchor_preprocessing(origin_anchors, data['img_size'], objectnesses, bbox_deltas, self.pre_k, self.post_k, self.nms_thres, self.reg_weight)
 
         return proposals, losses
 
-    def anchor_preparing(self, image_size, cls_score, bbox_pred):
+    def anchor_preparing(self, batch_size):
         '''
-        Args:
-            image_size (Tensor) : [B, 2]
-            cls_score (List) : List([B, 1*k, H, W])
-            bbox_pred (List) : List([B, 4*k, H, W])
         Returns:
-            origin_anchors (Tensor) : [B, A, 4]
-            objectnesses (Tensor)   : [B, A, 1]
-            bbox_deltas (Tensor)    : [B, A, 4]
+            origin_anchors (Tensor) : List([B, A, 4])
         '''
-        batch_size, _, _, _ = cls_score[0].size()
-
         # get initial anchors
         anchor_list = generate_anchor_form(self.anchor_type, self.feature_size, self.image_size)
         for idx, anchor in enumerate(anchor_list):
             anchor_list[idx] = anchor.view(-1,4).repeat(batch_size,1,1) # [B, A, 4]
 
-        # anchor preprocessing (top_k, bbox regression, nms etc.)
-        origin_anchors, objectnesses, bbox_deltas = anchor_preprocessing(anchor_list, image_size, cls_score, bbox_pred, self.pre_k, self.post_k, self.nms_thres)
-
-        return origin_anchors, objectnesses, bbox_deltas
+        return anchor_list
 
     def get_cls_output_target(self, cls_score, anchor_label):
         '''

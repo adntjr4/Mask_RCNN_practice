@@ -76,7 +76,8 @@ class BaseModel(nn.Module):
             bboxes, scores, img_id_map = self.box_head(feature_map, proposals, data, mode)
 
             # transform anchors into original image space 
-            bboxes = transform_xywh_with_img_id(bboxes, img_id_map, data['inv_trans'], data['img_id']).cpu()
+            if bboxes.size()[0] != 0:
+                bboxes = transform_xywh_with_img_id(bboxes, img_id_map, data['inv_trans'], data['img_id']).cpu()
 
             return bboxes, scores, img_id_map
 

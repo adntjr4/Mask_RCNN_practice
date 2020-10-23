@@ -44,7 +44,7 @@ def generate_anchor_form(anchor, feature_size, image_size):
         anchor_bbox.append(torch.stack(anchor_bbox_list).cuda()) # [k, H, W, 4]
     return anchor_bbox
 
-def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, post_top_k, nms_thres):
+def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, post_top_k, nms_thres, reg_weight):
     '''
     Args:
         anchors     (Tensor) : List([B, A, 4])
@@ -53,7 +53,8 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
         bbox_pred   (Tensor) : List([B, 4*k, H, W])
         pre_top_k   (int)    
         post_top_k  (int)    
-        nms_thres   (float)  
+        nms_thres   (float) 
+        reg_weight  (list)
     Returns:
         origin_anchors   (Tensor) : [B, A, 4]
         post_cls_score (Tensor) : [B, A, 1]
@@ -74,8 +75,18 @@ def anchor_preprocessing(anchors, image_size, cls_score, bbox_pred, pre_top_k, p
         lvl_cls_score_top = top_k_from_indices(lvl_cls_score, indices, pre_top_k)
         lvl_bbox_pred_top = top_k_from_indices(lvl_bbox_pred, indices, pre_top_k)
 
+        # bbox regression
+        lvl_anchors_top = box_regression(lvl_anchors_top, lvl_bbox_pred_top, reg_weight)
+
+        # invaild bbox clipping
+        invaild_bbox_cliping_per_batch(lvl_anchors_top, image_size)
+
+        # remove empty bbox
+        non_empty_keep = torch.logical_and( lvl_anchors_top[:,:,2] > 0 , lvl_anchors_top[:,:,3] > 0 )
+
         # NMS
-        concat_keep_map.append(nms_per_batch(lvl_anchors_top, lvl_cls_score_top, nms_thres))
+        nms_keep = nms_per_batch(lvl_anchors_top, lvl_cls_score_top, nms_thres)
+        concat_keep_map.append(torch.logical_and(non_empty_keep, nms_keep))
 
         # append
         origin_anchors.append(lvl_anchors_top)
@@ -347,12 +358,9 @@ def anchor_labeling_per_batch(anchor, gt_bbox, pos_thres:float, neg_thres:float,
     # IoU calculation
     cross_IoU = IoU(expanded_anchor, expanded_gt_bbox) # [B, N, A]
 
-    # label positive and negative (zero box will be ignored)
+    # label positive and negative
     anchor_pos_label = (cross_IoU > pos_thres).any(1)                    # [B, A]
     anchor_neg_label = torch.logical_not((cross_IoU > neg_thres).any(1)) # [B, A]
-    non_zero_w_label = anchor[:,:,2] > 0 # [B,A]
-    non_zero_h_label = anchor[:,:,3] > 0 # [B,A]
-    anchor_neg_label = torch.logical_and(torch.logical_and(anchor_neg_label, non_zero_h_label), non_zero_w_label)
 
     # find closest anchor for each gt_bbox
     if closest:

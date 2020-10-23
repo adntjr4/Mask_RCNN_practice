@@ -39,7 +39,8 @@ class BoxHead(nn.Module):
 
         # self.res5 = Res5(self.rpn_channel)
         self.conv11 = nn.Conv2d(self.rpn_channel, self.conv_channel, kernel_size=1, stride=1)
-        self.conv33 = nn.Conv2d(self.conv_channel, self.conv_channel, kernel_size=3, stride=1, padding=1)
+        self.conv1 = nn.Conv2d(self.conv_channel, self.conv_channel, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(self.conv_channel, self.conv_channel, kernel_size=3, stride=1, padding=1)
 
         self.fc1 = nn.Linear(self.conv_channel * self.roi_resolution * self.roi_resolution, self.fc_channel)
         self.fc2 = nn.Linear(self.fc_channel, self.fc_channel)
@@ -52,7 +53,8 @@ class BoxHead(nn.Module):
 
     def roi_head_layer_forward(self, roi, batch_size):
         layer_inter = F.relu_(self.conv11(roi))
-        layer_inter = F.relu_(self.conv33(layer_inter))
+        layer_inter = F.relu_(self.conv1(layer_inter))
+        layer_inter = F.relu_(self.conv2(layer_inter))
         _, C, PH, PW = layer_inter.size()
         layer_inter = layer_inter.view(batch_size, -1, C*PH*PW)
 
