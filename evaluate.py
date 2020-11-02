@@ -16,11 +16,10 @@ def main(config):
     # data loader
     conf_dl= config['data_loader']
     
-    batch_size = conf_dl['batch_size']
     num_workers = conf_dl['num_workers']
 
     test_data_set = DataSet(conf_dl, mode='val', human_only=True)
-    test_data_loader = DataLoader(test_data_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, collate_fn=batch_collate)
+    test_data_loader = DataLoader(test_data_set, batch_size=conf_dl['batch_size'], shuffle=False, num_workers=num_workers, collate_fn=batch_collate)
 
     # model
     model = BaseModel(config['model'])
@@ -41,9 +40,6 @@ if __name__ == '__main__':
     args.add_argument('-d', '--device', default=None, type=str)
     
     args = args.parse_args()
-
-    args.weight = 'data/saved/checkpoint/R50_human_checkpoint.pth'
-    #args.weight = 'data/saved/model/R50_human6_epoch16.pth'
 
     assert args.config is not None, 'config file path is needed'
     assert args.weight is not None, 'model weight is needed for evaluation'

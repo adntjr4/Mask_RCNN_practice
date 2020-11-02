@@ -1,4 +1,5 @@
 from os import path
+import random
 
 from pycocotools.coco import COCO
 import cv2
@@ -24,6 +25,8 @@ class DataSet(data.Dataset):
         self.data_type = '%s2017'%mode
         self.json_dir = self.data_dir + '/' + self.config['%s_instance'%mode]
 
+        self.rnd_hor_p = 0.5 if self.mode == 'train' else 0.0
+
         # init coco object
         self.coco = COCO(self.json_dir)
         self.human_ids = self.coco.getCatIds(catNms=['person'])
@@ -44,8 +47,10 @@ class DataSet(data.Dataset):
         # open image
         img_object = self.coco.loadImgs(self.img_id_list[index])[0]
         img = cv2.imread(path.join(self.data_dir, self.data_type, img_object['file_name']))
-        
-        img_tensor, trans, inv_trans, post_size = img_process(img, self.input_size)
+
+        hor_flip = True if random.random() > self.rnd_hor_p else False
+
+        img_tensor, trans, inv_trans, post_size = img_process(img, self.input_size, hor_flip)
 
         # parse image annotation
         img_size = torch.Tensor(post_size)

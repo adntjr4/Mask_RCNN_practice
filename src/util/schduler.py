@@ -18,15 +18,16 @@ if __name__ == "__main__":
     b = torch.Tensor([0])
     init_lr = 0.1
     otm = optim.SGD([a,b], init_lr)
-    warmup_sd = WarmupLRScheduler(otm, 10)
-    sd = optim.lr_scheduler.MultiStepLR(otm, [5,10])
+    warmup_sd = WarmupLRScheduler(otm, 100)
 
     # warmup
-    for i in range(10):
+    for i in range(100):
+        for param_group in otm.param_groups:
+            print(param_group['lr'])
         print(warmup_sd.get_lr())
         warmup_sd.step()
     
     # train
-    for i in range(20):
-        print(sd.get_lr())
-        sd.step()
+    for i in range(10):
+        for param_group in otm.param_groups:
+            print(param_group['lr'])

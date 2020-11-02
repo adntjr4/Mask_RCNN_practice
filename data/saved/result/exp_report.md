@@ -12,8 +12,26 @@
 10. log(2)로 줄이고 xy도 0.3으로 내림
 11. subtract mean
 12. freeze 2 front layer, post top k 1000
-13. warmup 1 epoch
-14. xy unlimit
+13. roi_head layer, warmup 1000 iters, hor flip augmentation
+
+
+## 13 번 실험 (16 epoch)
+
+### proposal score thres: 0.5, nms IoU thres: 0.5
+| 종류 |    IoU    |  area  |maxDets| value |
+|:----:|:---------:|:------:|:-----:|:-----:|
+|  AP  | 0.50:0.95 |  all   |  100  | 0.399 |
+|  AP  | 0.50      |  all   |  100  | 0.658 |
+|  AP  | 0.75      |  all   |  100  | 0.426 |
+|  AP  | 0.50:0.95 | small  |  100  | 0.177 |
+|  AP  | 0.50:0.95 | medium |  100  | 0.519 |
+|  AP  | 0.50:0.95 | large  |  100  | 0.588 |
+|  AR  | 0.50:0.95 |  all   |   1   | 0.163 |
+|  AR  | 0.50:0.95 |  all   |   10  | 0.424 |
+|  AR  | 0.50:0.95 |  all   |  100  | 0.450 |
+|  AR  | 0.50:0.95 | small  |  100  | 0.204 |
+|  AR  | 0.50:0.95 | medium |  100  | 0.572 |
+|  AR  | 0.50:0.95 | large  |  100  | 0.673 |
 
 ---
 

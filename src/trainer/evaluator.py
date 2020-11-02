@@ -5,7 +5,7 @@ from torch.nn import DataParallel
 from pycocotools.cocoeval import COCOeval
 import cv2
 
-from src.util.util import transform_xywh, draw_boxes
+from src.util.util import transform_xywh, draw_boxes_with_score
 
 
 class Evaluator():
@@ -39,66 +39,105 @@ class Evaluator():
         cocoEval.accumulate()
         cocoEval.summarize()
 
+    @torch.no_grad()
     def detection_prediction(self):
         self.log_out('predicting...')
 
         self.model.eval()
 
-        with torch.no_grad():
-            for data_idx, data in enumerate(self.data_loader):
-                # to device
-                cuda_data = {}
-                for k, v in data.items():
-                    if isinstance(v, torch.Tensor):
-                        cuda_data[k] = v.cuda()
+        for data_idx, data in enumerate(self.data_loader):
+            # to device
+            cuda_data = {}
+            for k, v in data.items():
+                if isinstance(v, torch.Tensor):
+                    cuda_data[k] = v.cuda()
 
-                # get prediction
-                bboxes, scores, img_id_map = self.model(cuda_data, mode='eval')
+            # get prediction
+            bboxes, scores, img_id_map = self.model(cuda_data, mode='eval')
 
-                # record prediction
-                self.save_one_image_detection(bboxes, scores, img_id_map)
+            # record prediction
+            self.save_one_image_detection(bboxes, scores, img_id_map)
 
-                if (data_idx+1) % 10 == 0:
-                    self.log_out('prediction [%04d/%04d]'%(data_idx+1, self.data_loader.__len__()))
+            if (data_idx+1) % 10 == 0:
+                self.log_out('prediction [%04d/%04d]'%(data_idx+1, self.data_loader.__len__()))
 
-            self.log_out('end prediction.')
+        self.log_out('end prediction.')
     
     def reset_results(self):
         self.detection_results = []
 
+    @torch.no_grad()
     def image_prediction(self):
         self.log_out('predicting...')
 
         self.model.eval()
 
-        with torch.no_grad():
-            for data_idx, data in enumerate(self.data_loader):
-                if data_idx >= self.config['img_num']:
-                    break
-                # to device
-                cuda_data = {}
-                for k, v in data.items():
-                    if isinstance(v, torch.Tensor):
-                        cuda_data[k] = v.cuda()
+        img_num = 0
+        for data in self.data_loader:
+            # to device
+            cuda_data = {}
+            for k, v in data.items():
+                if isinstance(v, torch.Tensor):
+                    cuda_data[k] = v.cuda()
 
-                # get prediction
-                bboxes, _, _ = self.model(cuda_data, mode='eval')
+            # get prediction
+            bboxes, scores, img_id_map = self.model(cuda_data, mode='eval')
 
-                # record prediction
-                img = self.data_set.get_original_img_from_id(data['img_id'].item())
-                self.image_out(img, 'test%d.jpg'%data_idx, bboxes)
-                self.log_out('%d image out'%(data_idx+1))
+            # setting image names
+            image_names = []
+            batch_size, _ = data['img_id'].size()
+            for img_idx in range(batch_size):
+                if img_num < self.config['img_num']:
+                    img_name = self.config['img_name']
+                    image_names.append(f'{img_name}{img_num}.jpg')
+                else:
+                    image_names.append('')
+                img_num += 1
 
-            self.log_out('end prediction.')
+            self.save_one_image_detection_as_image(data['img_id'], image_names, bboxes, scores, img_id_map)
 
-    def save_one_image_detection(self, bboxes, scores, img_ids):
+            if img_num >= self.config['img_num']:
+                break
+
+        self.log_out('end prediction.')
+
+    def save_one_image_detection_as_image(self, img_ids, image_names, bboxes, scores, img_id_map):
         '''
+        save result as image with bbox
         Args:
-            bboxes (Tensor) : [sum(N0, 4]
+            img_ids (Tensor) : [B]
+            image_names (List)
+            bboxes (Tensor) : [sum(N), 4]
             scores (Tensor) : [sum(N)]
-            img_ids (Tensor) : [sum(N)]
+            img_id_map (Tensor) : [sum(N)]
         '''
-        for bbox, score, img_id in zip(bboxes, scores, img_ids):
+        batch_size, _ = img_ids.size()
+
+        assert len(image_names) == batch_size
+
+        for batch_idx in range(batch_size):
+            # gather corresponding bboxes and scores
+            bboxes_list, scores_list = [], []
+            for bbox, score, img_id in zip(bboxes, scores, img_id_map):
+                if img_ids[batch_idx].item() == img_id.item():
+                    bboxes_list.append(bbox.cpu().tolist())
+                    scores_list.append(score.cpu().tolist())
+
+            # save image
+            if image_names[batch_idx] != '':
+                img = self.data_set.get_original_img_from_id(img_ids[batch_idx].item())
+                self.image_out(img, image_names[batch_idx], bboxes_list, scores_list)
+                self.log_out('%s >> saved'%(image_names[batch_idx]))
+
+    def save_one_image_detection(self, bboxes, scores, img_id_map):
+        '''
+        save result in class list
+        Args:
+            bboxes (Tensor) : [sum(N), 4]
+            scores (Tensor) : [sum(N)]
+            img_id_map (Tensor) : [sum(N)]
+        '''
+        for bbox, score, img_id in zip(bboxes, scores, img_id_map):
             result = {
                 'image_id': img_id.item(),
                 'category_id': 1,
@@ -109,8 +148,8 @@ class Evaluator():
             #self.image_out(img, 'aaaaaa.jpg', [bbox])
             self.detection_results.append(result)
 
-    def image_out(self, img, img_name, bboxes):
-        draw_img = draw_boxes(img, bboxes)
+    def image_out(self, img, img_name, bboxes, scores):
+        draw_img = draw_boxes_with_score(img, bboxes, scores)
         cv2.imwrite('data/tmp/%s'%(img_name), draw_img)
 
     def log_out(self, message):

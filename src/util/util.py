@@ -9,11 +9,7 @@ def load_model(file_name):
     saved_model = torch.load(file_name)
     return saved_model['model_weight']
 
-def draw_boxes(img, boxes, color=(0,255,0)):
-    if type(img) == torch.Tensor:
-        img = img.cpu()
-        img = img.permute(1,2,0).numpy()[:,:,[2,1,0]]
-
+def to_list(boxes):
     if type(boxes) == torch.Tensor:
         boxes = boxes.cpu()
         boxes = boxes.tolist()
@@ -21,11 +17,53 @@ def draw_boxes(img, boxes, color=(0,255,0)):
     if type(boxes) == np.array:
         boxes = boxes.tolist()
 
-    for box in boxes:
+    return boxes
+
+def draw_boxes(img, boxes, color=(220,20,255)):
+    if type(img) == torch.Tensor:
+        img = img.cpu()
+        img = img.permute(1,2,0).numpy()[:,:,[2,1,0]]
+
+    boxes_list = to_list(boxes)
+
+    for box in boxes_list:
         x, y, w, h = box
         pt1 = (int(x), int(y))
         pt2 = (int(x+w), int(y+h))
         img = cv2.rectangle(cv2.UMat(img), pt1, pt2, color, 1)
+
+    return img
+
+def draw_boxes_with_score(img, bboxes, scores, color=(220,20,255)):
+    if type(img) == torch.Tensor:
+        img = img.cpu()
+        img = img.permute(1,2,0).numpy()[:,:,[2,1,0]]
+
+    boxes_list = to_list(bboxes)
+    scores_list = to_list(scores)
+
+    y_pos = [2, 5, 8]
+    y_pos_down = [8, 12, 20]
+    ratio = [0.3, 0.5, 0.7]
+    for box, score in zip(boxes_list, scores_list):
+        x, y, w, h = box
+        pt1 = (int(x), int(y))
+        pt2 = (int(x+w), int(y+h))
+        
+        if min(w, h) < 100:
+            s_index = 0
+        elif min(w,h) < 200:
+            s_index = 1
+        else:
+            s_index = 2
+
+        if y > 50:
+            pt_letter = (int(x), int(y)-y_pos[s_index])
+        else:
+            pt_letter = (int(x), int(y)+y_pos_down[s_index])
+
+        img = cv2.rectangle(cv2.UMat(img), pt1, pt2, color, 1)
+        cv2.putText(img, str(int(score[0]*100)), pt_letter, cv2.FONT_HERSHEY_SIMPLEX, ratio[s_index], color, 1)
 
     return img
 
@@ -45,7 +83,7 @@ def transform_xywh_with_img_id(xywh, img_id_map, inv_trans, img_id):
     # (couldn't think the way with gpu tensor)
     matching_batch = xywh.new_zeros(N).type(torch.int64)
     for batch_idx, one_img_id in enumerate(img_id):
-        matching_batch[matching_batch==one_img_id] = batch_idx
+        matching_batch[img_id_map==one_img_id] = batch_idx
     matching_batch = matching_batch.repeat(2,3,1).permute(2,0,1)
 
     matching_inv_trans = torch.gather(input=inv_trans, dim=0, index=matching_batch)
@@ -93,12 +131,13 @@ def transform_xywh(xywh, trans):
 
 image_mean = np.array([103.530, 116.280, 123.675]) # BGR
 
-def img_process(img, resize):
+def img_process(img, resize, hor_flip=False):
     '''
     pre-processing of image from cv image to tensor
     Args:
         img (np.ndarray)
         resize (tuple) : height, width
+        hor_flip (bool) : horizontal flip when True
     Returns:
         padded_img (Tensor) : [C, H, W]
         size (Tensor) : [2]
@@ -112,7 +151,7 @@ def img_process(img, resize):
     else:
         size = (int(resize[0]*h/w), resize[0])
 
-    trans, inv_trans = get_trans_matrix((h,w), size)
+    trans, inv_trans = get_trans_matrix((h,w), size, hor_flip)
     resized_img = cv2.warpAffine(img, trans, resize)
     resized_img = resized_img - image_mean
     img_tensor = torch.Tensor(resized_img[:,:,[2,1,0]].transpose(2,0,1))
